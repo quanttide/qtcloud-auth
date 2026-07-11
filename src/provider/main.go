@@ -13,14 +13,17 @@ import (
 
 func main() {
 	// ── 存储 ──
-	db, err := buntdb.Open(":memory:")
-	if err != nil {
-		slog.Error("open db", "error", err)
-		os.Exit(1)
-	}
-	defer db.Close()
+dbPath := getEnv("DB_PATH", ":memory:")
+db, err := buntdb.Open(dbPath)
+if err != nil {
+	slog.Error("open db", "error", err)
+	os.Exit(1)
+}
+defer db.Close()
 
-	st := &buntdbStorer{db: db}
+slog.Info("database opened", "path", dbPath)
+
+st := &buntdbStorer{db: db}
 
 	// ── 认证处理器 ──
 	secret := getEnv("JWT_SECRET", "quanttide-auth-secret")

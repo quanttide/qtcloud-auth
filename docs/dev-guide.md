@@ -73,6 +73,7 @@ qtcloud-auth/
 | `JWT_SECRET` | `quanttide-auth-secret` | HS256 签名密钥 |
 | `ADMIN_PASSWORD` | `123456` | 管理员密码 |
 | `SMS_TEST_CODE` | （不设置） | 设为 `123456` 则验证码固定，用于集成测试 |
+| `DB_PATH` | `:memory:` | BuntDB 数据库路径。`data.db` 持久化到文件，重启不丢数据 |
 
 | 硬编码常量 | 值 | 说明 |
 |-----------|-----|------|
@@ -113,7 +114,12 @@ type Storer interface {
 }
 ```
 
-当前使用内存存储（BuntDB），可按需对接 MySQL / PostgreSQL / Redis 等。
+当前使用 **BuntDB**（[`DB_PATH` 环境变量](#) 控制）：
+
+- **`:memory:`**（默认）— 纯内存，进程重启数据丢失，适合开发调试
+- **文件路径**（如 `data.db`）— 持久化到磁盘，重启不丢
+
+可按需对接 SQLite / MySQL / PostgreSQL 等。
 
 ## 部署
 
