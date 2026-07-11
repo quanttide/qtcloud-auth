@@ -17,14 +17,14 @@ func AuthMiddleware(secret string) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			authHeader := r.Header.Get("Authorization")
 			if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
-				WriteError(w, "UNAUTHORIZED", "missing or invalid authorization header", http.StatusUnauthorized)
+				WriteOAuthError(w, "invalid_token", "missing or invalid authorization header", http.StatusUnauthorized)
 				return
 			}
 
 			token := strings.TrimPrefix(authHeader, "Bearer ")
 			claims, err := auth.Verify(token, secret)
 			if err != nil {
-				WriteError(w, "UNAUTHORIZED", "invalid or expired token", http.StatusUnauthorized)
+				WriteOAuthError(w, "invalid_token", "invalid or expired token", http.StatusUnauthorized)
 				return
 			}
 
