@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"math/big"
 	"net/http"
+	"os"
 	"regexp"
 	"time"
 
@@ -34,6 +35,9 @@ func isValidPhone(phone string) bool {
 }
 
 func generateCode() (string, error) {
+	if fixed := os.Getenv("SMS_TEST_CODE"); fixed != "" {
+		return fixed, nil
+	}
 	n, err := rand.Int(rand.Reader, big.NewInt(1000000))
 	if err != nil {
 		return "", fmt.Errorf("generate code: %w", err)

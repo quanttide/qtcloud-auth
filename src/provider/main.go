@@ -1,11 +1,11 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
-	"time"
 
 	"github.com/quanttide/qtcloud-auth/api"
 	"github.com/tidwall/buntdb"
@@ -62,57 +62,73 @@ type buntdbStorer struct {
 	db *buntdb.DB
 }
 
+const idSeqKey = "sys:id_seq"
+
+func (s *buntdbStorer) nextID() (string, error) {
+	var id string
+	err := s.db.Update(func(tx *buntdb.Tx) error {
+		val, err := tx.Get(idSeqKey)
+		n := 0
+		if err == nil {
+			fmt.Sscanf(val, "%d", &n)
+		}
+		n++
+		id = fmt.Sprintf("u%d", n)
+		tx.Set(idSeqKey, fmt.Sprintf("%d", n), nil)
+		return nil
+	})
+	return id, err
+}
+
 func (s *buntdbStorer) List(collection string) ([]byte, error) {
 	var result []byte
 	err := s.db.View(func(tx *buntdb.Tx) error {
-		val, err := tx.Get(collection)
-		if err == buntdb.ErrNotFound {
+		raw, err := tx.Get(colKey(collection))
+		if err != nil {
 			result = []byte("[]")
 			return nil
 		}
-		if err != nil {
-			return err
+		var ids []string
+		json.Unmarshal([]byte(raw), &ids)
+
+		var items []json.RawMessage
+		for _, id := range ids {
+			if val, err := tx.Get(id); err == nil {
+				items = append(items, json.RawMessage(val))
+			}
 		}
-		result = []byte(val)
+		result, _ = json.Marshal(items)
 		return nil
 	})
 	return result, err
 }
 
 func (s *buntdbStorer) Create(collection string, data []byte) (string, error) {
-	id := fmt.Sprintf("%s/%d", collection, time.Now().UnixNano())
-	err := s.db.Update(func(tx *buntdb.Tx) error {
-		// 读取已有列表
-		raw, err := tx.Get(collection)
-		if err != nil && err != buntdb.ErrNotFound {
-			return err
-		}
-		var items []map[string]any
-		if raw != "" {
-			// 追加模式：保留原样，稍后更新
-		}
-		_ = items
-		return tx.Set(collection, string(data), nil)
-	})
+	id, err := s.nextID()
 	if err != nil {
 		return "", err
 	}
-	return id, nil
+	err = s.db.Update(func(tx *buntdb.Tx) error {
+		tx.Set(id, string(data), nil)
+		raw, err := tx.Get(colKey(collection))
+		var ids []string
+		if err == nil {
+			json.Unmarshal([]byte(raw), &ids)
+		}
+		ids = append(ids, id)
+		b, _ := json.Marshal(ids)
+		tx.Set(colKey(collection), string(b), nil)
+		return nil
+	})
+	return id, err
 }
 
-func (s *buntdbStorer) Get(collection string, id string) ([]byte, error) {
+func (s *buntdbStorer) Get(_ string, id string) ([]byte, error) {
 	var result []byte
 	err := s.db.View(func(tx *buntdb.Tx) error {
-		// 读取集合，再按 id 查找
-		raw, err := tx.Get(collection)
-		if err != nil {
-			return err
-		}
-		_ = raw
-		// 简化：直接按 id 存储
 		val, err := tx.Get(id)
 		if err != nil {
-			return err
+			return fmt.Errorf("not found")
 		}
 		result = []byte(val)
 		return nil
@@ -120,8 +136,13 @@ func (s *buntdbStorer) Get(collection string, id string) ([]byte, error) {
 	return result, err
 }
 
-func (s *buntdbStorer) Update(collection string, id string, data []byte) error {
+func (s *buntdbStorer) Update(_ string, id string, data []byte) error {
 	return s.db.Update(func(tx *buntdb.Tx) error {
-		return tx.Set(id, string(data), nil)
+		tx.Set(id, string(data), nil)
+		return nil
 	})
+}
+
+func colKey(collection string) string {
+	return "idx:" + collection
 }

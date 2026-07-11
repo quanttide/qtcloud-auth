@@ -15,8 +15,8 @@ class TestTokenEndpoint:
             "/oauth/token",
             data={
                 "grant_type": "password",
-                "username": "testuser",
-                "password": "testpass",
+                "username": "admin",
+                "password": "123456",
             },
         )
         assert resp.status_code == 200
@@ -32,7 +32,7 @@ class TestTokenEndpoint:
             "/oauth/token",
             data={
                 "grant_type": "password",
-                "username": "testuser",
+                "username": "admin",
                 "password": "wrongpass",
             },
         )
@@ -40,11 +40,15 @@ class TestTokenEndpoint:
 
     @pytest.mark.integration
     async def test_sms_code_grant(self, client: httpx.AsyncClient):
+        # 先发验证码（SMS_TEST_CODE=123456 时验证码固定）
+        resp_send = await client.post("/oauth/sms/send", json={"phone": "13900139000"})
+        assert resp_send.status_code == 200
+
         resp = await client.post(
             "/oauth/token",
             data={
                 "grant_type": "sms_code",
-                "phone": "13800138000",
+                "phone": "13900139000",
                 "code": "123456",
             },
         )

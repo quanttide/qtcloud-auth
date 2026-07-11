@@ -5,13 +5,16 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 
 import httpx
+import os
+
 import pytest
 
 
 @pytest.fixture
 def base_url() -> str:
-    """Base URL of the running qtcloud-auth service."""
-    return "http://localhost:8080"
+    """Base URL of the running qtcloud-auth service.
+    Override via TEST_BASE_URL env var."""
+    return os.environ.get("TEST_BASE_URL", "http://localhost:8080")
 
 
 @pytest.fixture
@@ -28,8 +31,8 @@ async def access_token(client: httpx.AsyncClient) -> str:
         "/oauth/token",
         data={
             "grant_type": "password",
-            "username": "testuser",
-            "password": "testpass",
+            "username": "admin",
+            "password": "123456",
         },
     )
     resp.raise_for_status()
@@ -43,8 +46,8 @@ async def refresh_token(client: httpx.AsyncClient) -> str:
         "/oauth/token",
         data={
             "grant_type": "password",
-            "username": "testuser",
-            "password": "testpass",
+            "username": "admin",
+            "password": "123456",
         },
     )
     resp.raise_for_status()
