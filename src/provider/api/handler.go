@@ -8,7 +8,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/quanttide/qtcloud-auth/auth"
+	"github.com/go-oauth2/oauth2/v4"
+	"github.com/go-oauth2/oauth2/v4/server"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/quanttide/qtcloud-auth/model"
 )
 
@@ -23,65 +25,29 @@ type Storer interface {
 // AuthHandler OAuth 2.0 认证处理器.
 type AuthHandler struct {
 	store        Storer
-	secret       string
+	secret       []byte                          // JWT 签名密钥
 	smsSender    SMSSender
 	codeStore    map[string][]model.VerificationCode
 	codeLastSent map[string]time.Time
 	codeMu       sync.Mutex
+	oauthMgr     oauth2.Manager
+	oauthSrv     *server.Server
 }
 
 func NewAuthHandler(st Storer, secret string, sender SMSSender) *AuthHandler {
 	return &AuthHandler{
 		store:        st,
-		secret:       secret,
+		secret:       []byte(secret),
 		smsSender:    sender,
 		codeStore:    make(map[string][]model.VerificationCode),
 		codeLastSent: make(map[string]time.Time),
 	}
 }
 
-// authResponse OAuth 2.0 标准 token 响应.
-type authResponse struct {
-	AccessToken  string `json:"access_token"`
-	TokenType    string `json:"token_type"`
-	ExpiresIn    int64  `json:"expires_in"`
-	RefreshToken string `json:"refresh_token,omitempty"`
-}
-
+// hashPassword SHA256(username + ":" + password).
 func hashPassword(username, password string) string {
 	h := sha256.Sum256([]byte(username + ":" + password))
 	return hex.EncodeToString(h[:])
-}
-
-// internal claims
-const (
-	accessTokenTTL  = 1 * time.Hour
-	refreshTokenTTL = 30 * 24 * time.Hour
-)
-
-func (h *AuthHandler) issueTokens(sub, role, phone string) authResponse {
-	now := time.Now()
-	accessClaims := map[string]any{
-		"sub":   sub,
-		"role":  role,
-		"phone": phone,
-		"exp":   now.Add(accessTokenTTL).Unix(),
-	}
-	accessToken, _ := auth.Sign(accessClaims, h.secret)
-
-	refreshClaims := map[string]any{
-		"sub":  sub,
-		"type": "refresh_token",
-		"exp":  now.Add(refreshTokenTTL).Unix(),
-	}
-	refreshToken, _ := auth.Sign(refreshClaims, h.secret)
-
-	return authResponse{
-		AccessToken:  accessToken,
-		TokenType:    "Bearer",
-		ExpiresIn:    int64(accessTokenTTL.Seconds()),
-		RefreshToken: refreshToken,
-	}
 }
 
 // ── 用户查找 ──
@@ -118,6 +84,25 @@ func (h *AuthHandler) findUserByPhone(phone string) (*model.User, error) {
 		}
 	}
 	return nil, nil
+}
+
+// ── JWT 令牌验证（供中间件和 UserInfo 使用） ──
+
+// parseToken 解析并验证 Bearer JWT.
+func (h *AuthHandler) parseToken(tokenString string) (jwt.MapClaims, error) {
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (any, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, jwt.ErrSignatureInvalid
+		}
+		return h.secret, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
+		return claims, nil
+	}
+	return nil, jwt.ErrSignatureInvalid
 }
 
 // ── 管理员种子 ──
