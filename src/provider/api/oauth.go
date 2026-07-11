@@ -16,6 +16,7 @@ import (
 	"github.com/go-oauth2/oauth2/v4/store"
 	jwt "github.com/golang-jwt/jwt/v5"
 	"github.com/quanttide/qtcloud-auth/model"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // SetupOAuth 初始化 go-oauth2 Manager 和 Server.
@@ -46,7 +47,10 @@ func (h *AuthHandler) SetupOAuth() *server.Server {
 		if err != nil {
 			return "", err
 		}
-		if user == nil || user.PasswordHash != hashPassword(username, password) {
+		if user == nil {
+			return "", errors.ErrInvalidGrant
+		}
+		if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err != nil {
 			return "", errors.ErrInvalidGrant
 		}
 		return user.ID, nil

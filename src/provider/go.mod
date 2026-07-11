@@ -1,6 +1,6 @@
 module github.com/quanttide/qtcloud-auth
 
-go 1.23.0
+go 1.25.0
 
 require (
 	github.com/go-oauth2/oauth2/v4 v4.5.4
@@ -17,4 +17,5 @@ require (
 	github.com/tidwall/pretty v1.2.0 // indirect
 	github.com/tidwall/rtree v0.0.0-20180113144539-6cd427091e0e // indirect
 	github.com/tidwall/tinyqueue v0.0.0-20180302190814-1e39f5511563 // indirect
+	golang.org/x/crypto v0.54.0 // indirect
 )

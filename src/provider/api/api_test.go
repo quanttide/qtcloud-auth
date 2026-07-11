@@ -17,6 +17,7 @@ import (
 	"github.com/go-oauth2/oauth2/v4/store"
 	jwtlib "github.com/golang-jwt/jwt/v5"
 	"github.com/quanttide/qtcloud-auth/model"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // ── Mocks ──
@@ -191,17 +192,21 @@ func TestGenerateCode(t *testing.T) {
 }
 
 func TestHashPassword(t *testing.T) {
-	h1 := hashPassword("admin", "secret")
-	h2 := hashPassword("admin", "secret")
-	h3 := hashPassword("admin", "wrong")
-	if h1 != h2 {
-		t.Error("same input must produce same hash")
+	h1, err := hashPassword("secret")
+	if err != nil {
+		t.Fatal(err)
 	}
-	if h1 == h3 {
-		t.Error("different passwords must produce different hashes")
+	// 同一个密码每次 bcrypt 输出不同（自动加盐）
+	h2, _ := hashPassword("secret")
+	if h1 == h2 {
+		t.Error("bcrypt must produce different hashes due to random salt")
 	}
-	if len(h1) != 64 {
-		t.Errorf("hash len = %d, want 64", len(h1))
+	// 但都能正确验证
+	if err := bcrypt.CompareHashAndPassword([]byte(h1), []byte("secret")); err != nil {
+		t.Error("valid password should match")
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(h1), []byte("wrong")); err == nil {
+		t.Error("wrong password should not match")
 	}
 }
 
@@ -442,8 +447,8 @@ func TestEnsureAdmin_Creates(t *testing.T) {
 	if u == nil {
 		t.Fatal("admin user not found")
 	}
-	if u.PasswordHash != hashPassword("admin", "admin123") {
-		t.Errorf("password hash mismatch: %q vs %q", u.PasswordHash, hashPassword("admin", "admin123"))
+	if err := bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte("admin123")); err != nil {
+		t.Errorf("password hash mismatch: %v", err)
 	}
 }
 

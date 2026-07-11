@@ -1,8 +1,6 @@
 package api
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"log/slog"
 	"sync"
@@ -12,6 +10,7 @@ import (
 	"github.com/go-oauth2/oauth2/v4/server"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/quanttide/qtcloud-auth/model"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // Storer 持久化抽象.
@@ -44,10 +43,13 @@ func NewAuthHandler(st Storer, secret string, sender SMSSender) *AuthHandler {
 	}
 }
 
-// hashPassword SHA256(username + ":" + password).
-func hashPassword(username, password string) string {
-	h := sha256.Sum256([]byte(username + ":" + password))
-	return hex.EncodeToString(h[:])
+// hashPassword bcrypt 密码哈希.
+func hashPassword(password string) (string, error) {
+	b, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
 }
 
 // ── 用户查找 ──
@@ -117,9 +119,13 @@ func (h *AuthHandler) EnsureAdmin(password string) error {
 		return nil
 	}
 
+	hash, err := hashPassword(password)
+	if err != nil {
+		return err
+	}
 	user := model.User{
 		Username:     "admin",
-		PasswordHash: hashPassword("admin", password),
+		PasswordHash: hash,
 		CreatedAt:    time.Now().Format(time.RFC3339),
 	}
 	data, _ := json.Marshal(user)
