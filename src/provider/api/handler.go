@@ -122,19 +122,13 @@ func (h *AuthHandler) EnsureAdmin(password string) error {
 		PasswordHash: hashPassword("admin", password),
 		CreatedAt:    time.Now().Format(time.RFC3339),
 	}
-	data, err := json.Marshal(user)
-	if err != nil {
-		return err
-	}
+	data, _ := json.Marshal(user)
 	id, err := h.store.Create("auth/users", data)
 	if err != nil {
 		return err
 	}
 	user.ID = id
-	data, err = json.Marshal(user)
-	if err != nil {
-		return err
-	}
+	data, _ = json.Marshal(user)
 	if err := h.store.Update("auth/users", id, data); err != nil {
 		return err
 	}

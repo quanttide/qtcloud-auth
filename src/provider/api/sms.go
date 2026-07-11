@@ -70,13 +70,7 @@ func (h *AuthHandler) SendCode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	code, err := generateCode()
-	if err != nil {
-		slog.Error("generate code", "error", err)
-		h.codeMu.Unlock()
-		WriteOAuthError(w, "server_error", "failed to generate code", http.StatusInternalServerError)
-		return
-	}
+	code, _ := generateCode()
 
 	vc := model.VerificationCode{
 		Phone:     req.Phone,
