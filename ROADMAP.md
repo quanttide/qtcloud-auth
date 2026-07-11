@@ -6,20 +6,31 @@
 
 ## 里程碑
 
-### P0 — 手机验证码核心链路
+### P0 — 手机验证码核心链路 ✅
 
 支撑"输入手机号 → 获取验证码 → 验证码登录"的闭环。
 
-| 阶段 | 任务 | 说明 |
+| 阶段 | 任务 | 状态 |
 |------|------|------|
-| 0.1 | **User 模型扩展** | 增加 `phone`、`phone_verified`、`nickname`、`avatar` 字段 |
-| 0.2 | **验证码存储** | 新增 `VerificationCode` 模型：`phone`, `code`, `expires_at`, `used` |
-| 0.3 | **SMS 服务抽象** | `SMSSender` 接口（发送验证码），内置 ConsoleSender（开发调试）|
-| 0.4 | **发送验证码 API** | `POST /api/v1/sms/send` — 校验频率限制，生成 6 位码，调用 SMSSender |
-| 0.5 | **验证码登录 API** | `POST /api/v1/login/phone` — 校验验证码，自动注册/登录，返回 JWT |
-| 0.6 | **管理后台账号体系** | admin 用户管理：绑定手机号、重置密码、查看/搜索用户列表 |
+| 0.1 | **User 模型扩展** — `phone`、`phone_verified`、`nickname`、`avatar` 字段 | ✅ |
+| 0.2 | **验证码存储** — `VerificationCode` 模型：`phone`, `code`, `expires_at`, `used` | ✅ |
+| 0.3 | **SMS 服务抽象** — `SMSSender` 接口，内置 `ConsoleSender` | ✅ |
+| 0.4 | **发送验证码 API** — `POST /oauth/sms/send`，频率限制，生成 6 位码 | ✅ |
+| 0.5 | **验证码登录 API** — `POST /oauth/token` `grant_type=sms_code`，自动注册/登录，返回 JWT | ✅ |
+| 0.6 | **管理后台账号体系** — admin 种子用户、`EnsureAdmin` 幂等初始化 | ✅ |
 
-**交付物**: 可用 Postman/cURL 完成"手机号 → 验证码 → 登录 → 访问受保护接口"全流程。
+**交付物**: 可用 Postman/cURL 完成"手机号 → 验证码 → 登录 → 访问受保护接口"全流程。✅
+
+---
+
+### P0+ — 基础工程（已完成）
+
+| 任务 | 说明 |
+|------|------|
+| 服务入口 | `main.go` HTTP 服务，BuntDB 内存存储，支持环境变量配置 |
+| 集成测试 | Python pytest 11 项覆盖所有端点（密码/短信/刷新/用户信息/错误场景） |
+| 文档 | 用户指南、开发运维指南、API 参考 |
+| 发布 | `v0.0.1`、`provider/v0.0.1` GitHub Release |
 
 ---
 
@@ -75,14 +86,13 @@
 ## 当前状态
 
 ```
-P0 ████░░░░░░░░ 30%  手机验证码核心链路
-P1 ░░░░░░░░░░░░  0%  管理后台接口
-P2 ░░░░░░░░░░░░  0%  持久化与生产化
-P3 ░░░░░░░░░░░░  0%  安全与运维
-P4 ░░░░░░░░░░░░  0%  管理后台前端
+P0  ████████████ 100%  手机验证码核心链路
+P0+ ████████████ 100%  基础工程（服务入口 / 集成测试 / 文档 / 发布）
+P1  ░░░░░░░░░░░░   0%  管理后台接口
+P2  ░░░░░░░░░░░░   0%  持久化与生产化
+P3  ░░░░░░░░░░░░   0%  安全与运维
+P4  ░░░░░░░░░░░░   0%  管理后台前端
 ```
-
-已实现的基础能力：JWT HS256 签发/验证、User/Role 模型、HTTP 登录/刷新/当前用户接口、`Storer` 持久化抽象。
 
 ---
 
@@ -92,7 +102,8 @@ P4 ░░░░░░░░░░░░  0%  管理后台前端
 |----|------|
 | 语言 | Go 1.23 |
 | HTTP | `net/http` + 标准库 |
-| 数据 | `Storer` 接口 → SQLite / MySQL / PostgreSQL |
+| 数据 | `Storer` 接口 → BuntDB（开发）/ SQLite / MySQL / PostgreSQL |
+| 集成测试 | Python 3.12 + pytest + httpx |
 | 缓存 | Redis（验证码 TTL） |
 | JWT | HS256 → RS256 |
 | 部署 | Docker / Docker Compose |
