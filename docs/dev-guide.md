@@ -72,6 +72,7 @@ qtcloud-auth/
 | `LISTEN_ADDR` | `:8080` | HTTP 监听地址 |
 | `JWT_SECRET` | `quanttide-auth-secret` | HS256 签名密钥 |
 | `ADMIN_PASSWORD` | `123456` | 管理员密码 |
+| `SMS_DRIVER` | `console` | SMS 发送器。`console` 输出到日志，其他值待扩展（如 `aliyun`） |
 | `SMS_TEST_CODE` | （不设置） | 设为 `123456` 则验证码固定，用于集成测试 |
 | `DB_PATH` | `:memory:` | BuntDB 数据库路径。`data.db` 持久化到文件，重启不丢数据 |
 

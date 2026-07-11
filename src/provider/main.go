@@ -23,33 +23,44 @@ defer db.Close()
 
 slog.Info("database opened", "path", dbPath)
 
-st := &buntdbStorer{db: db}
+	st := &buntdbStorer{db: db}
 
-	// ── 认证处理器 ──
-	secret := getEnv("JWT_SECRET", "quanttide-auth-secret")
-	handler := api.NewAuthHandler(st, secret, &api.ConsoleSender{})
-	handler.SetupOAuth()
-
-	// 种子管理员（密码从环境变量读取，默认 123456）
-	adminPass := getEnv("ADMIN_PASSWORD", "123456")
-	if err := handler.EnsureAdmin(adminPass); err != nil {
-		slog.Error("ensure admin", "error", err)
+	// ── SMS 发送器 ──
+	smsDriver := getEnv("SMS_DRIVER", "console")
+	var sender api.SMSSender
+	switch smsDriver {
+	case "console":
+		sender = &api.ConsoleSender{}
+	default:
+		slog.Error("unknown sms driver", "driver", smsDriver)
 		os.Exit(1)
 	}
 
-	// ── 路由 ──
-	mux := http.NewServeMux()
-	mux.HandleFunc("POST /oauth/token", handler.Token)
-	mux.HandleFunc("POST /oauth/sms/send", handler.SendCode)
-	mux.HandleFunc("GET /userinfo", handler.AuthMiddleware(http.HandlerFunc(handler.UserInfo)).ServeHTTP)
+// ── 认证处理器 ──
+secret := getEnv("JWT_SECRET", "quanttide-auth-secret")
+handler := api.NewAuthHandler(st, secret, sender)
+handler.SetupOAuth()
 
-	// ── 启动 ──
-	addr := getEnv("LISTEN_ADDR", ":8080")
-	slog.Info("starting server", "addr", addr)
-	if err := http.ListenAndServe(addr, mux); err != nil {
-		slog.Error("server error", "error", err)
-		os.Exit(1)
-	}
+// 种子管理员（密码从环境变量读取，默认 123456）
+adminPass := getEnv("ADMIN_PASSWORD", "123456")
+if err := handler.EnsureAdmin(adminPass); err != nil {
+	slog.Error("ensure admin", "error", err)
+	os.Exit(1)
+}
+
+// ── 路由 ──
+mux := http.NewServeMux()
+mux.HandleFunc("POST /oauth/token", handler.Token)
+mux.HandleFunc("POST /oauth/sms/send", handler.SendCode)
+mux.HandleFunc("GET /userinfo", handler.AuthMiddleware(http.HandlerFunc(handler.UserInfo)).ServeHTTP)
+
+// ── 启动 ──
+addr := getEnv("LISTEN_ADDR", ":8080")
+slog.Info("starting server", "addr", addr)
+if err := http.ListenAndServe(addr, mux); err != nil {
+	slog.Error("server error", "error", err)
+	os.Exit(1)
+}
 }
 
 func getEnv(key, fallback string) string {
