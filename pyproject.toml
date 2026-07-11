@@ -1,21 +1,3 @@
-[build-system]
-requires = ["setuptools>=64", "wheel"]
-build-backend = "setuptools.backends._legacy:_Backend"
-
-[project]
-name = "qtcloud-auth-tests"
-version = "0.1.0"
-description = "Integration tests for qtcloud-auth"
-requires-python = ">=3.12"
-
-[project.optional-dependencies]
-dev = [
-    "pytest>=8",
-    "pytest-asyncio>=0.24",
-    "httpx>=0.28",
-    "pytest-httpx>=0.35",
-]
-
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
