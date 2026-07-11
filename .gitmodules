@@ -1,3 +1,0 @@
-[submodule "apps/qtcloud-auth"]
-	path = apps/qtcloud-auth
-	url = https://github.com/quanttide/quanttide-auth.git
