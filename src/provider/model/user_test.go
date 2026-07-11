@@ -7,11 +7,15 @@ import (
 
 func TestUser(t *testing.T) {
 	orig := User{
-		ID:           "u1",
-		Username:     "alice",
-		PasswordHash: "hash123",
-		RoleID:       "r1",
-		CreatedAt:    "2026-06-01",
+		ID:            "u1",
+		Username:      "alice",
+		PasswordHash:  "hash123",
+		Phone:         "13800138000",
+		PhoneVerified: true,
+		Nickname:      "Alice",
+		Avatar:        "https://example.com/avatar.png",
+		RoleID:        "r1",
+		CreatedAt:     "2026-06-01",
 	}
 	data, err := json.Marshal(orig)
 	if err != nil {

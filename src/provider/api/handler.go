@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/quanttide/qtcloud-auth/auth"
@@ -20,12 +21,22 @@ type Storer interface {
 }
 
 type AuthHandler struct {
-	store  Storer
-	secret string
+	store       Storer
+	secret      string
+	smsSender   SMSSender
+	codeStore   map[string][]model.VerificationCode
+	codeLastSent map[string]time.Time
+	codeMu      sync.Mutex
 }
 
-func NewAuthHandler(st Storer, secret string) *AuthHandler {
-	return &AuthHandler{store: st, secret: secret}
+func NewAuthHandler(st Storer, secret string, sender SMSSender) *AuthHandler {
+	return &AuthHandler{
+		store:        st,
+		secret:       secret,
+		smsSender:    sender,
+		codeStore:    make(map[string][]model.VerificationCode),
+		codeLastSent: make(map[string]time.Time),
+	}
 }
 
 type loginRequest struct {
@@ -54,6 +65,23 @@ func (h *AuthHandler) findUserByUsername(username string) (*model.User, error) {
 	}
 	for _, u := range users {
 		if u.Username == username {
+			return &u, nil
+		}
+	}
+	return nil, nil
+}
+
+func (h *AuthHandler) findUserByPhone(phone string) (*model.User, error) {
+	data, err := h.store.List("auth/users")
+	if err != nil {
+		return nil, err
+	}
+	var users []model.User
+	if err := json.Unmarshal(data, &users); err != nil {
+		return nil, err
+	}
+	for _, u := range users {
+		if u.Phone == phone {
 			return &u, nil
 		}
 	}
