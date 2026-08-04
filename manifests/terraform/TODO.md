@@ -4,13 +4,13 @@
 
 - [x] provider 存储后端对接 PostgreSQL（GORM，`DB_DRIVER` / `DATABASE_URL` 运行时约定已生效，见 docs/fc-adaptation.md Phase 1；本地开发默认 SQLite）
 - [x] go-oauth2 refresh_token 存储迁移到共享存储（GORM TokenStore，见 internal/store/token_store.go，FC 多实例刷新可用）
-- [ ] Dockerfile 多阶段构建（见 ROADMAP P3.5，生产镜像 < 20MB），镜像由 deploy-provider workflow 双通道发布（Docker Hub + ACR `registry.cn-hangzhou.aliyuncs.com/quanttide/qtcloud-auth-provider`，`provider/*` tag 触发）
-- [ ] GitHub Actions workflow：terraform init / plan / apply，引用 org secrets（`ALIYUN_ACCESS_KEY_ID` / `ALIYUN_ACCESS_KEY_SECRET`）；ACR 命名空间/仓库幂等创建
-- [ ] 复制 `terraform.tfvars.example` → `terraform.tfvars` 填写真实值（含 `jwt_secret` / `admin_password`），执行 `terraform apply`
-- [ ] 上线验证：通过 `terraform output fc_http_url` 调用 `/oauth/token`、`/userinfo` 确认全链路可用
+- [x] Dockerfile 多阶段构建（alpine + musl/CGO，非 root），镜像由 deploy-provider workflow 双通道发布（Docker Hub + ACR `registry.cn-hangzhou.aliyuncs.com/quanttide/qtcloud-auth-provider`，`provider/*` tag 触发）
+- [x] GitHub Actions workflow：terraform init / plan / apply，引用 org secrets（`ALIYUN_ACCESS_KEY_ID` / `ALIYUN_ACCESS_KEY_SECRET`，另需 `DB_PASSWORD` / `JWT_SECRET` / `ADMIN_PASSWORD` / ACR / Docker Hub 凭证）；ACR 命名空间/仓库由 CI 幂等创建（PUBLIC）
+- [ ] 上线验证：`terraform apply` 后通过 `terraform output fc_http_url` 调用 `/oauth/token`、`/userinfo` 确认全链路可用
 
 ## CI 与安全(P1)
 
+- [ ] 镜像体积优化到 <20MB（CGO+musl sqlite 致 34.3MB；需纯 Go sqlite 驱动或生产仅 postgres 镜像）
 - [ ] 短信发送器接入阿里云 SMS（当前仅 `console`，验证码输出到日志；参考 data/library/aliyun-sms-integration.md），并配置 `SMS_DRIVER=aliyun` 及对应密钥
 - [ ] 密码/密钥不再明文落入 tfstate（改 FC 配置中心 / 密钥管理注入）
 - [ ] 本地/开发凭证收敛为只读（第 2 层生产保护），apply 仅存于 CI

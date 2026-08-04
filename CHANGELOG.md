@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.0-alpha.2 (2026-08-04)
+
+- 项目结构对齐 Go 社区惯例：入口迁至 `cmd/server`，`api` / `model` 迁入 `internal/`
+- Dockerfile：多阶段构建（alpine + musl/CGO），非 root 运行
+- CI：新增 deploy-provider workflow（`provider/*` tag 触发；Docker Hub + ACR 双通道发布镜像 + Terraform 部署到 FC）
+
 ## 0.1.0-alpha.1 (2026-08-04)
 
 - 存储后端迁移：BuntDB → GORM（开发 SQLite / 生产 PostgreSQL），`DB_DRIVER` / `DATABASE_URL` / `DB_SQLITE_DSN` 环境变量替代 `DB_PATH`

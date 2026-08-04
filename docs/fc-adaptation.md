@@ -60,11 +60,14 @@ FC custom-container ──VPC内网──▶ 共享 RDS PostgreSQL（quanttide-p
 - 日志结构化（JSON），便于 FC 日志服务检索
 - 优雅退出：捕获 SIGTERM，关闭 DB 连接池
 
-### Phase 5 — 镜像与发布（阻塞项）
+### Phase 5 — 镜像与发布（✅ 已完成）
 
-1. Dockerfile 多阶段构建（ROADMAP P3.5，目标 < 20MB）：静态编译 + 精简基础镜像
-2. CI workflow（deploy-provider，对齐 pay）：镜像构建 → 双通道发布（Docker Hub + ACR `registry.cn-hangzhou.aliyuncs.com/quanttide/qtcloud-auth-provider`）→ `terraform init/plan/apply`
-3. ACR 命名空间/仓库由 CI 幂等创建
+1. Dockerfile 多阶段构建（alpine + musl/CGO，非 root 运行）：`go build ./cmd/server`，`goproxy.cn` 依赖代理（本地实测可构建）
+2. CI workflow（deploy-provider，对齐 pay）：`provider/*` tag 触发 → 镜像双通道发布（Docker Hub + ACR `registry.cn-hangzhou.aliyuncs.com/quanttide/qtcloud-auth-provider`）→ `terraform init/plan/apply`
+3. ACR 命名空间/仓库由 CI 幂等创建（实例版 API，PUBLIC，FC 免凭证直拉）
+4. 部署环境变量：`TF_VAR_db_password` / `TF_VAR_jwt_secret` / `TF_VAR_admin_password`（org secrets）
+
+**验证**：本地 `docker build` + 容器运行通过（token 端点 200）。镜像 34.3MB（CGO+musl sqlite 所致，pay 同约束；<20MB 需纯 Go sqlite 驱动或仅 postgres 镜像，P2）。
 
 ## 验收标准
 
@@ -76,4 +79,12 @@ FC custom-container ──VPC内网──▶ 共享 RDS PostgreSQL（quanttide-p
 
 ## 实施顺序
 
-Phase 1（存储 ✅ 已落地，含 refresh_token 共享存储）→ Phase 5（镜像/CI，打通端到端）→ Phase 2（短信）→ Phase 4（可观测）→ Phase 3（密钥收敛，可并行）。
+Phase 1（存储 ✅）→ Phase 5（镜像/CI ✅）→ Phase 2（短信）→ Phase 4（可观测）→ Phase 3（密钥收敛，可并行）。
+
+## 发布流程（CI 就绪后）
+
+1. 补 CHANGELOG → 提交
+2. 打 tag：`provider/v0.1.0-alpha.N`（前缀 tag 触发 deploy-provider workflow）
+3. 推送：`git push origin provider/v0.1.0-alpha.N`
+4. 观察 Actions 运行：build-image（双通道发布）→ deploy（terraform apply，挂 production 环境，可配 required reviewers）
+5. 上线验证：`terraform output fc_http_url` 完成登录闭环

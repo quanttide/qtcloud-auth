@@ -1,0 +1,168 @@
+# 部署 provider：推送 tag（provider/*，如 provider/v0.1.0-alpha.2）时，
+# 先构建发布 Docker 镜像（Docker Hub + 阿里云 ACR 双通道），再通过 Terraform apply 部署到阿里云。
+#
+# 镜像双通道原因：FC 中国区无法拉取 Docker Hub 镜像（registry not reachable），
+# 部署用镜像固定指向同地域 ACR；Docker Hub 保留为对外分发通道。
+#
+# 所需 GitHub secrets（org 级）：
+#   - ALIYUN_ACCESS_KEY_ID / ALIYUN_ACCESS_KEY_SECRET：RAM 用户 AccessKey（PowerUserAccess + AliyunRAMFullAccess；ACR 幂等创建命名空间/仓库用）
+#   - ALIYUN_ACR_USERNAME / ALIYUN_ACR_PASSWORD / ALIYUN_ACR_REGISTRY：ACR 个人版固定凭证（docker login）
+#   - DB_PASSWORD：RDS 数据库密码（注入 TF_VAR_db_password）
+#   - JWT_SECRET：JWT HS256 签名密钥（注入 TF_VAR_jwt_secret）
+#   - ADMIN_PASSWORD：种子管理员密码（注入 TF_VAR_admin_password）
+#   - DOCKERHUB_USERNAME / DOCKERHUB_PASSWORD：Docker Hub 凭证（双通道之一）
+#
+# 前置条件：
+#   - OSS 状态桶已存在（env.TF_STATE_BUCKET）；PowerUserAccess 已含 OSS 权限
+#   - ACR 个人版实例已开通（控制台 cr.console.aliyun.com 首次进入自动开通）；命名空间/仓库由本 workflow 幂等创建（实例版 API，PUBLIC）
+
+name: Deploy Provider
+
+on:
+  push:
+    tags:
+      - 'provider/**'
+
+concurrency:
+  group: deploy-provider
+  cancel-in-progress: false
+
+env:
+  TF_VAR_region: cn-hangzhou
+  TF_VAR_environment: prod
+  TF_STATE_BUCKET: quanttide-terraform-state
+  TF_STATE_KEY: qtcloud-auth/terraform.tfstate
+  ACR_REGISTRY: registry.cn-hangzhou.aliyuncs.com
+  ACR_NAMESPACE: quanttide
+
+jobs:
+  build-image:
+    name: Build & Push Image
+    runs-on: ubuntu-latest
+    env:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      # aliyun CLI 凭证（新变量名；terraform provider 用 ALICLOUD_ACCESS_KEY / ALICLOUD_SECRET_KEY）
+      ALICLOUD_ACCESS_KEY_ID: ${{ secrets.ALIYUN_ACCESS_KEY_ID }}
+      ALICLOUD_ACCESS_KEY_SECRET: ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}
+      ALICLOUD_REGION_ID: cn-hangzhou
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # tag provider/v0.1.0-alpha.2 → 镜像 tag v0.1.0-alpha.2（仅 tag 触发，无手动入口）
+      - name: Resolve Image Tag
+        id: image
+        run: |
+          TAG="${GITHUB_REF_NAME#provider/}"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_PASSWORD }}
+
+      # 配置 aliyun CLI（仅用于下方幂等创建 ACR 命名空间/仓库）；
+      # 注意：aliyun/aliyun-cli-action@v1 的 access-key-id 等输入无效（只认 version），
+      # 必须用 setup-aliyun-cli-action + 环境变量注入凭证
+      - name: Configure aliyun CLI
+        uses: aliyun/setup-aliyun-cli-action@v1
+        with:
+          version: latest
+
+      # ACR 命名空间/仓库幂等创建（实例版 API，失败即报错不吞）
+      - name: Ensure ACR Namespace & Repo
+        run: |
+          set -euo pipefail
+          # 1. 取个人版实例 ID（当前 aliyun CLI 的 cr 为实例版 API，CreateNamespace/CreateRepository 必填 InstanceId）
+          INSTANCE_ID="$(aliyun cr ListInstance --InstanceType acr_personal --RegionId "${ALICLOUD_REGION_ID}" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d['instances'][0]['instanceId'] if d.get('instances') else '')")"
+          if [ -z "${INSTANCE_ID}" ]; then
+            echo "::error::ACR 个人版实例不存在（ListInstance 为空）。请先在控制台开通容器镜像服务个人版：https://cr.console.aliyun.com/ ，或确认 ALIYUN_ACCESS_KEY_ID/SECRET 与 ACR 登录凭证同属一个主账号"
+            exit 1
+          fi
+          echo "ACR instance: ${INSTANCE_ID}"
+          # 2. 命名空间：GetNamespace 查存在，不存在才创建，创建失败即 fail
+          if ! aliyun cr GetNamespace --InstanceId "${INSTANCE_ID}" --NamespaceName "${ACR_NAMESPACE}" >/dev/null 2>&1; then
+            aliyun cr CreateNamespace --InstanceId "${INSTANCE_ID}" --NamespaceName "${ACR_NAMESPACE}" --DefaultVisibility PUBLIC --AutoCreate false
+          fi
+          # 3. 仓库：同上
+          if ! aliyun cr GetRepository --InstanceId "${INSTANCE_ID}" --NamespaceName "${ACR_NAMESPACE}" --RepoName qtcloud-auth-provider >/dev/null 2>&1; then
+            aliyun cr CreateRepository --InstanceId "${INSTANCE_ID}" --NamespaceName "${ACR_NAMESPACE}" --RepoName qtcloud-auth-provider --RepoType PUBLIC --Summary "qtcloud-auth 身份认证与权限管理 API 镜像"
+          fi
+          echo "ACR namespace/repo OK"
+
+      - name: Login to ACR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.ALIYUN_ACR_REGISTRY }}
+          username: ${{ secrets.ALIYUN_ACR_USERNAME }}
+          password: ${{ secrets.ALIYUN_ACR_PASSWORD }}
+
+      - name: Build and Push
+        uses: docker/build-push-action@v6
+        with:
+          context: src/provider
+          push: true
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/qtcloud-auth-provider:${{ steps.image.outputs.tag }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/qtcloud-auth-provider:latest
+            ${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/qtcloud-auth-provider:${{ steps.image.outputs.tag }}
+            ${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/qtcloud-auth-provider:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    name: Terraform Apply
+    runs-on: ubuntu-latest
+    needs: build-image
+    timeout-minutes: 40 # RDS 创建耗时较长
+    permissions:
+      contents: read
+    # 生产环境保护：可在 GitHub Settings → Environments → production 配置 required reviewers（人工审批后才能 apply）
+    environment: production
+
+    env:
+      ALICLOUD_ACCESS_KEY: ${{ secrets.ALIYUN_ACCESS_KEY_ID }}
+      ALICLOUD_SECRET_KEY: ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}
+      TF_VAR_db_password: ${{ secrets.DB_PASSWORD }}
+      TF_VAR_jwt_secret: ${{ secrets.JWT_SECRET }}
+      TF_VAR_admin_password: ${{ secrets.ADMIN_PASSWORD }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 部署镜像固定指向 ACR（FC 中国区拉不到 Docker Hub）；仅写入 GITHUB_ENV，不进 job output
+      - name: Resolve Image Name
+        run: |
+          TAG="${GITHUB_REF_NAME#provider/}"
+          echo "TF_VAR_image=${ACR_REGISTRY}/${ACR_NAMESPACE}/qtcloud-auth-provider:${TAG}" >> "$GITHUB_ENV"
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: '1.15.8' # 对齐本地环境
+
+      - name: Terraform Init（OSS 远程状态）
+        working-directory: manifests/terraform
+        run: |
+          terraform init -input=false \
+            -backend-config="bucket=${{ env.TF_STATE_BUCKET }}" \
+            -backend-config="key=${{ env.TF_STATE_KEY }}" \
+            -backend-config="region=${{ env.TF_VAR_region }}"
+
+      - name: Terraform Validate
+        working-directory: manifests/terraform
+        run: terraform validate -no-color
+
+      - name: Terraform Plan
+        working-directory: manifests/terraform
+        run: terraform plan -input=false -no-color -out=tfplan
+
+      - name: Terraform Apply
+        working-directory: manifests/terraform
+        run: terraform apply -input=false -no-color tfplan

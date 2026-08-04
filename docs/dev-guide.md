@@ -149,3 +149,34 @@ go build -o qtcloud-auth ./cmd/server
 - 无状态服务，水平扩容（多实例 + 负载均衡）
 - 如果使用内存存储，各实例数据不共享，需更换为共享存储后端
 - 令牌验证基于 JWT 签名，无状态，无需集中存储
+
+## CI 部署（deploy-provider）
+
+[.github/workflows/deploy-provider.yml](../.github/workflows/deploy-provider.yml) 是唯一部署入口（对齐 qtcloud-pay）：
+
+- **触发**：推送 `provider/*` tag（如 `provider/v0.1.0-alpha.2`）；**无手动触发**（生产保护）
+- **job 1 `build-image`**：Dockerfile 多阶段构建 → 双通道发布（Docker Hub + ACR）→ 各带版本 tag 与 `latest`；ACR 命名空间/仓库幂等创建（PUBLIC，FC 免凭证直拉）
+- **job 2 `deploy`**：`terraform init/validate/plan/apply`（OSS 远程状态 `qtcloud-auth/terraform.tfstate`），挂 GitHub `production` 环境（可配 required reviewers）
+
+### 所需 GitHub secrets（org 级）
+
+| secret | 用途 | 注入方式 |
+|--------|------|---------|
+| `ALIYUN_ACCESS_KEY_ID` / `ALIYUN_ACCESS_KEY_SECRET` | RAM 用户 AccessKey（terraform + aliyun CLI） | terraform：`ALICLOUD_ACCESS_KEY` / `ALICLOUD_SECRET_KEY`；aliyun CLI：`ALICLOUD_ACCESS_KEY_ID` / `ALICLOUD_ACCESS_KEY_SECRET` |
+| `ALIYUN_ACR_USERNAME` / `ALIYUN_ACR_PASSWORD` / `ALIYUN_ACR_REGISTRY` | ACR 个人版固定凭证（docker login） | `docker/login-action` |
+| `DB_PASSWORD` / `JWT_SECRET` / `ADMIN_PASSWORD` | RDS 密码 / JWT 密钥 / 管理员密码 | `TF_VAR_db_password` / `TF_VAR_jwt_secret` / `TF_VAR_admin_password` |
+| `DOCKERHUB_USERNAME` / `DOCKERHUB_PASSWORD` | Docker Hub 凭证（双通道之一） | `docker/login-action` |
+
+### 关键坑（pay 实战沉淀）
+
+1. **ALICLOUD_* 新旧变量名不互通**：terraform 读 `ALICLOUD_ACCESS_KEY` / `ALICLOUD_SECRET_KEY`；aliyun CLI 3.x 读 `ALICLOUD_ACCESS_KEY_ID` / `ALICLOUD_ACCESS_KEY_SECRET` / `ALICLOUD_REGION_ID`。写错不报错，只会在远端 API 失败
+2. **aliyun/aliyun-cli-action@v1 的凭证输入无效**：必须用 `aliyun/setup-aliyun-cli-action@v1` + 环境变量注入
+3. **ACR API 是实例版**：`CreateNamespace` / `CreateRepository` 必填 `InstanceId`（`ListInstance --InstanceType acr_personal` 获取），参数名是 `--NamespaceName` / `--RepoName`
+4. **幂等创建要「Get 查存在 → 不存在才建 → 失败即 fail」**，不要「建失败当已存在」（会吞错假成功）
+5. **含 secret 的值只写 `$GITHUB_ENV`**，写 `$GITHUB_OUTPUT` 会被脱敏置空（如镜像名拼接 Docker Hub 用户名）
+
+### 发版流程
+
+1. 补 CHANGELOG → 提交
+2. 打 tag：`provider/v0.1.0-alpha.N`，推送（tag 指向的 commit 决定 CI 用的代码，**先推修复再发 tag**）
+3. 观察 Actions：build-image → deploy；失败版本建议直接发 alpha.N+1，语义更干净

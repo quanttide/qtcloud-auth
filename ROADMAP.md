@@ -68,7 +68,7 @@
 | 3.2 | **JWT 改进** | 支持 RS256 非对称签名、refresh token 轮换机制 |
 | 3.3 | **配置中心** | 环境变量 / YAML 配置文件统一管理 |
 | 3.4 | **健康检查 & 指标** | `/healthz`、Prometheus 指标暴露 |
-| 3.5 | **Docker 镜像** | 多阶段构建，生产镜像 < 20MB |
+| 3.5 | ~~Docker 镜像~~ ✅ | 多阶段构建完成（alpine + musl/CGO，见 fc-adaptation.md Phase 5）；当前 34.3MB，<20MB 需纯 Go sqlite 驱动或生产仅 postgres 镜像 |
 
 ---
 
