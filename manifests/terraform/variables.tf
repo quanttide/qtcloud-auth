@@ -52,7 +52,7 @@ variable "admin_password" {
 }
 
 variable "sms_driver" {
-  description = "短信发送器（provider 环境变量 SMS_DRIVER；当前实现仅 console，阿里云短信见 docs/dev-guide.md 与 data/library/aliyun-sms-integration.md）"
+  description = "短信发送器（provider 环境变量 SMS_DRIVER；当前实现仅 console，阿里云短信见 docs/dev-guide/index.md 与 data/library/aliyun-sms-integration.md）"
   type        = string
   default     = "console"
 }
