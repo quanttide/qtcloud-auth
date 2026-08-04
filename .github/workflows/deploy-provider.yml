@@ -142,7 +142,7 @@ jobs:
         working-directory: manifests/terraform
         run: |
           set -euo pipefail
-          INSTANCE_ID="$(terraform state pull | jq -r '.resources[] | select(.type=="data.terraform_remote_state" and .name=="platform") | .instances[0].attributes.outputs.rds_instance_id')"
+          INSTANCE_ID="$(terraform state pull | jq -r '.resources[] | select(.type=="terraform_remote_state" and .name=="platform") | .instances[0].attributes.outputs.value.rds_instance_id')"
           echo "RDS instance: ${INSTANCE_ID}"
           STATUS() { aliyun rds DescribeDBInstances --RegionId "${TF_VAR_region}" | jq -r --arg id "${INSTANCE_ID}" '.Items.DBInstance[] | select(.DBInstanceId==$id) | .DBInstanceStatus'; }
           S="$(STATUS)"

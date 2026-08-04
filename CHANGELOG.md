@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.0-alpha.6 (2026-08-04)
+
+- 修复 Ensure RDS 步骤：`terraform state pull` 中 data source 类型为 `terraform_remote_state`（无 `data.` 前缀），outputs 嵌套在 `.outputs.value` 下——实例 ID 提取修正
+
 ## 0.1.0-alpha.5 (2026-08-04)
 
 - CI：保留共享 RDS Serverless AutoPause（省钱）；deploy job 新增「Ensure RDS Instance Running」步骤（terraform 前幂等启动实例并轮询，最多 3 分钟）
