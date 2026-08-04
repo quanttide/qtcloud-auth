@@ -4,6 +4,7 @@
 > - [index.md](./index.md) — 本地开发与配置（本文）
 > - [ci.md](./ci.md) — CI 部署与踩坑记录（deploy-provider workflow）
 > - [iac.md](./iac.md) — 基础设施（Terraform / ACR / RDS）
+> - [auth.md](./auth.md) — 鉴权架构与安全现状
 
 ## 本地开发
 
