@@ -26,6 +26,13 @@ func main() {
 
 	st := store.New(db)
 
+	// 令牌存储（共享，refresh_token 跨实例可用）
+	tokenStore, err := store.NewTokenStore(db)
+	if err != nil {
+		slog.Error("init token store", "error", err)
+		os.Exit(1)
+	}
+
 	// ── SMS 发送器 ──
 	smsDriver := getEnv("SMS_DRIVER", "console")
 	var sender api.SMSSender
@@ -39,7 +46,7 @@ func main() {
 
 	// ── 认证处理器 ──
 	secret := getEnv("JWT_SECRET", "quanttide-auth-secret")
-	handler := api.NewAuthHandler(st, secret, sender)
+	handler := api.NewAuthHandler(st, secret, sender, tokenStore)
 	handler.SetupOAuth()
 
 	// 种子管理员（密码从环境变量读取，默认 123456）

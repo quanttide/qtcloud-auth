@@ -16,6 +16,8 @@ import (
 	"github.com/go-oauth2/oauth2/v4/manage"
 	"github.com/go-oauth2/oauth2/v4/store"
 	jwtlib "github.com/golang-jwt/jwt/v5"
+	"github.com/quanttide/qtcloud-auth/internal/app"
+	qtstore "github.com/quanttide/qtcloud-auth/internal/store"
 	"github.com/quanttide/qtcloud-auth/model"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -729,6 +731,41 @@ func TestToken_Refresh_Success(t *testing.T) {
 	json.NewDecoder(w2.Body).Decode(&second)
 	if second.AccessToken == "" {
 		t.Error("no access_token from refresh")
+	}
+}
+
+// 共享 TokenStore：登录 + 刷新走 GORM 存储（模拟 FC 共享后端）；轮换后旧 refresh_token 作废。
+func TestToken_Refresh_WithSharedStore(t *testing.T) {
+	db, err := app.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tokenStore, err := qtstore.NewTokenStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := NewAuthHandler(&mockStorer{}, "test-secret", &mockSMSSender{}, tokenStore)
+	h.SetupOAuth()
+
+	rt := getRefreshToken(t, h)
+
+	post := func(refresh string) *httptest.ResponseRecorder {
+		form := url.Values{"grant_type": {"refresh_token"}, "refresh_token": {refresh}}
+		r := httptest.NewRequest("POST", "/oauth/token", strings.NewReader(form.Encode()))
+		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		w := httptest.NewRecorder()
+		h.Token(w, r)
+		return w
+	}
+
+	w := post(rt)
+	if w.Code != http.StatusOK {
+		t.Fatalf("first refresh status = %d, body=%s", w.Code, w.Body.String())
+	}
+
+	// 轮换后旧 refresh_token 应作废
+	if w2 := post(rt); w2.Code == http.StatusOK {
+		t.Error("old refresh token should be revoked after rotation")
 	}
 }
 

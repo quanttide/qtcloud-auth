@@ -127,6 +127,8 @@ type Storer interface {
 
 模型（User / Role / VerificationCode）在启动时由 `AutoMigrate` 建表；验证码与频率限制同样走 Storer（FC 多实例可用），不保留实例本地状态。
 
+OAuth 令牌（access/refresh）存于 `oauth_tokens` 表（GORM 实现 `oauth2.TokenStore`，见 `internal/store/token_store.go`）：refresh_token 跨实例可用，刷新轮换后旧 token 自动作废。
+
 ## 部署
 
 ### 构建

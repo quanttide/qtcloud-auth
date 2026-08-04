@@ -21,21 +21,28 @@ type Storer interface {
 }
 
 // AuthHandler OAuth 2.0 认证处理器.
-// 验证码等数据统一走 Storer（共享存储，FC 多实例可用），不保留本地可变状态。
+// 验证码、令牌等数据统一走共享存储（FC 多实例可用），不保留实例本地状态。
 type AuthHandler struct {
-	store     Storer
-	secret    []byte // JWT 签名密钥
-	smsSender SMSSender
-	oauthMgr  oauth2.Manager
-	oauthSrv  *server.Server
+	store           Storer
+	secret          []byte // JWT 签名密钥
+	smsSender       SMSSender
+	oauthTokenStore oauth2.TokenStore // 可选：缺省用内存 TokenStore（单实例）
+	oauthMgr        oauth2.Manager
+	oauthSrv        *server.Server
 }
 
-func NewAuthHandler(st Storer, secret string, sender SMSSender) *AuthHandler {
-	return &AuthHandler{
+// NewAuthHandler 创建认证处理器。
+// tokenStore 可选：传入则用于令牌/刷新令牌的共享存储，缺省为内存实现（测试、单实例）。
+func NewAuthHandler(st Storer, secret string, sender SMSSender, tokenStore ...oauth2.TokenStore) *AuthHandler {
+	h := &AuthHandler{
 		store:     st,
 		secret:    []byte(secret),
 		smsSender: sender,
 	}
+	if len(tokenStore) > 0 {
+		h.oauthTokenStore = tokenStore[0]
+	}
+	return h
 }
 
 // hashPassword bcrypt 密码哈希.

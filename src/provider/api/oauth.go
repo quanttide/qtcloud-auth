@@ -26,6 +26,9 @@ func (h *AuthHandler) SetupOAuth() *server.Server {
 	mgr.MapAccessGenerate(generates.NewJWTAccessGenerate("", h.secret, jwt.SigningMethodHS256))
 
 	ts, _ := store.NewMemoryTokenStore()
+	if h.oauthTokenStore != nil {
+		ts = h.oauthTokenStore
+	}
 	mgr.MapTokenStorage(ts)
 
 	// Client store
