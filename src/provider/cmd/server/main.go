@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/quanttide/qtcloud-auth/api"
+	"github.com/quanttide/qtcloud-auth/internal/api"
 	"github.com/quanttide/qtcloud-auth/internal/app"
 	"github.com/quanttide/qtcloud-auth/internal/store"
 )

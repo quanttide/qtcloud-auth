@@ -17,8 +17,8 @@ import (
 	"github.com/go-oauth2/oauth2/v4/store"
 	jwtlib "github.com/golang-jwt/jwt/v5"
 	"github.com/quanttide/qtcloud-auth/internal/app"
+	"github.com/quanttide/qtcloud-auth/internal/model"
 	qtstore "github.com/quanttide/qtcloud-auth/internal/store"
-	"github.com/quanttide/qtcloud-auth/model"
 	"golang.org/x/crypto/bcrypt"
 )
 

@@ -13,10 +13,10 @@
 cd src/provider
 
 # 普通启动
-go run .
+go run ./cmd/server
 
 # 启动并固定验证码（用于集成测试）
-SMS_TEST_CODE=123456 go run .
+SMS_TEST_CODE=123456 go run ./cmd/server
 ```
 
 服务默认监听 `:8080`，通过 `LISTEN_ADDR` 环境变量修改。
@@ -39,7 +39,7 @@ uv sync --dev
 pip install pytest pytest-asyncio httpx
 
 # 运行全部集成测试
-SMS_TEST_CODE=123456 LISTEN_ADDR=:8081 go run . &
+SMS_TEST_CODE=123456 LISTEN_ADDR=:8081 go run ./cmd/server &
 TEST_BASE_URL=http://localhost:8081 pytest -v
 ```
 
@@ -50,11 +50,11 @@ TEST_BASE_URL=http://localhost:8081 pytest -v
 ```
 qtcloud-auth/
 ├── src/provider/          ← Go 认证提供者
-│   ├── api/               ← HTTP 端点（handler + middleware）
+│   ├── cmd/server/        ← 服务入口（main.go，对齐 qtcloud-pay 的 cmd/server 布局）
+│   ├── internal/api/      ← HTTP 端点（handler + middleware）
 │   ├── internal/app/      ← 数据库打开与迁移（GORM，对齐 qtcloud-pay 的 DB_DRIVER 约定）
+│   ├── internal/model/    ← 数据模型（User, Role, VerificationCode）
 │   ├── internal/store/    ← Storer 的 GORM 实现（users / roles / verification_codes）
-│   ├── model/             ← 数据模型（User, Role, VerificationCode）
-│   ├── main.go            ← 服务入口
 │   └── go.mod
 ├── tests/                 ← Python 集成测试
 │   ├── conftest.py
@@ -135,7 +135,7 @@ OAuth 令牌（access/refresh）存于 `oauth_tokens` 表（GORM 实现 `oauth2.
 
 ```bash
 cd src/provider
-go build -o qtcloud-auth .
+go build -o qtcloud-auth ./cmd/server
 ```
 
 ### 启动生产实例

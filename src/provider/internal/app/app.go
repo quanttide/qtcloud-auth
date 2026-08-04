@@ -8,7 +8,7 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
-	"github.com/quanttide/qtcloud-auth/model"
+	"github.com/quanttide/qtcloud-auth/internal/model"
 )
 
 // Open 打开数据库并迁移全部模型（driver: sqlite/postgres，dsn 对应驱动格式）。

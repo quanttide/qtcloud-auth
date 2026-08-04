@@ -9,7 +9,7 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	"github.com/quanttide/qtcloud-auth/model"
+	"github.com/quanttide/qtcloud-auth/internal/model"
 )
 
 // 集合名（与 api 层 Storer 约定一致）。

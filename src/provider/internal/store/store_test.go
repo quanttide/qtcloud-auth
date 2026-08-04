@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/quanttide/qtcloud-auth/internal/app"
-	"github.com/quanttide/qtcloud-auth/model"
+	"github.com/quanttide/qtcloud-auth/internal/model"
 )
 
 func newTestStore(t *testing.T) *Store {

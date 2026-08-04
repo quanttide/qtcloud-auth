@@ -19,7 +19,7 @@
 
 ## 运行时配置（注入 FC 环境变量）
 
-对齐 provider 运行时约定（[src/provider/main.go](../../src/provider/main.go)）：
+对齐 provider 运行时约定（[src/provider/cmd/server/main.go](../../src/provider/cmd/server/main.go)）：
 
 | 环境变量 | 来源 | 说明 |
 |----------|------|------|

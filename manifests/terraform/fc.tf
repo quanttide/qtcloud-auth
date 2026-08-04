@@ -49,7 +49,7 @@ resource "alicloud_fcv3_function" "this" {
     port  = 8080
   }
 
-  # 对齐 provider 运行时约定（见 src/provider/main.go）：容器监听 8080（LISTEN_ADDR 默认 :8080）
+  # 对齐 provider 运行时约定（见 src/provider/cmd/server/main.go）：容器监听 8080（LISTEN_ADDR 默认 :8080）
   # DB_DRIVER / DATABASE_URL 对齐共享 RDS 方案；provider 存储后端当前为 BuntDB，PostgreSQL 支持见 TODO.md
   # 注意：密码/密钥会以明文落入 tfstate，生产环境建议改用 FC 配置中心/密钥管理注入
   environment_variables = {

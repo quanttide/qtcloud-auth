@@ -12,7 +12,7 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/quanttide/qtcloud-auth/model"
+	"github.com/quanttide/qtcloud-auth/internal/model"
 )
 
 // SMSSender 短信发送抽象.
