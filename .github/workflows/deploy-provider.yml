@@ -100,6 +100,10 @@ jobs:
     env:
       ALICLOUD_ACCESS_KEY: ${{ secrets.ALIYUN_ACCESS_KEY_ID }}
       ALICLOUD_SECRET_KEY: ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}
+      # aliyun CLI 凭证（Ensure RDS 步骤用；与 terraform 的变量名不同）
+      ALICLOUD_ACCESS_KEY_ID: ${{ secrets.ALIYUN_ACCESS_KEY_ID }}
+      ALICLOUD_ACCESS_KEY_SECRET: ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}
+      ALICLOUD_REGION_ID: cn-hangzhou
       TF_VAR_db_password: ${{ secrets.DB_PASSWORD }}
       TF_VAR_jwt_secret: ${{ secrets.JWT_SECRET }}
       TF_VAR_admin_password: ${{ secrets.ADMIN_PASSWORD }}
@@ -126,6 +130,35 @@ jobs:
             -backend-config="bucket=${{ env.TF_STATE_BUCKET }}" \
             -backend-config="key=${{ env.TF_STATE_KEY }}" \
             -backend-config="region=${{ env.TF_VAR_region }}"
+
+      # 共享 RDS Serverless 空闲自动暂停（AutoPause，省钱）；暂停时 RDS 资源操作会失败/卡死，
+      # 故 apply 前确保实例 Running（幂等：已 Running 则跳过；STOPPED 则启动并轮询，最长 3 分钟）
+      - name: Configure aliyun CLI
+        uses: aliyun/setup-aliyun-cli-action@v1
+        with:
+          version: '3.4.11' # 锁版本：latest 曾致 cr API 参数漂移
+
+      - name: Ensure RDS Instance Running
+        working-directory: manifests/terraform
+        run: |
+          set -euo pipefail
+          INSTANCE_ID="$(terraform state pull | jq -r '.resources[] | select(.type=="data.terraform_remote_state" and .name=="platform") | .instances[0].attributes.outputs.rds_instance_id')"
+          echo "RDS instance: ${INSTANCE_ID}"
+          STATUS() { aliyun rds DescribeDBInstances --RegionId "${TF_VAR_region}" | jq -r --arg id "${INSTANCE_ID}" '.Items.DBInstance[] | select(.DBInstanceId==$id) | .DBInstanceStatus'; }
+          S="$(STATUS)"
+          if [ "${S}" != "Running" ]; then
+            echo "实例状态 ${S}，启动中..."
+            aliyun rds StartDBInstance --RegionId "${TF_VAR_region}" --DBInstanceId "${INSTANCE_ID}"
+            for i in $(seq 1 12); do
+              sleep 15
+              S="$(STATUS)"
+              echo "轮询 ${i}: ${S}"
+              [ "${S}" = "Running" ] && break
+            done
+            [ "${S}" != "Running" ] && { echo "::error::RDS 实例未能在 3 分钟内启动"; exit 1; }
+          else
+            echo "实例已 Running"
+          fi
 
       - name: Terraform Validate
         working-directory: manifests/terraform
