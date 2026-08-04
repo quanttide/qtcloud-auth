@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.0-alpha.8 (2026-08-04)
+
+- 安全加固：注入真实 `JWT_SECRET` / `ADMIN_PASSWORD`（替换默认值 quanttide-auth-secret / 123456）；部署后需删除旧 admin 记录并由实例冷启动重建（见 docs）
+
 ## 0.1.0-alpha.7 (2026-08-04)
 
 - 修复 Ensure RDS 步骤成功路径误报失败：`[ x ] && { exit 1; }` 作为脚本最后一条命令时，条件为假返回 1 即脚本以 1 退出（与 set -e 无关）——改为 if 语句
