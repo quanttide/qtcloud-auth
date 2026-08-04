@@ -69,6 +69,10 @@ FC custom-container ──VPC内网──▶ 共享 RDS PostgreSQL（quanttide-p
 
 **验证**：本地 `docker build` + 容器运行通过（token 端点 200）。镜像 34.3MB（CGO+musl sqlite 所致，pay 同约束；<20MB 需纯 Go sqlite 驱动或仅 postgres 镜像，P2）。
 
+**上线验证（2026-08-04 alpha.4 通过）**：`fc_http_url` 端到端可用——admin 登录 200（JWT + refresh_token）、userinfo 401 中间件正常、SMS 发送 200。
+
+**坑（已修复）**：buildx 默认生成 provenance/sbom attestation，其 manifest 平台为 `unknown/unknown`，FC 镜像优化器拒绝（`ImageOptimizingFailed`）→ workflow 需显式 `provenance: false` / `sbom: false`。
+
 ## 验收标准
 
 1. FC 部署后 `DB_DRIVER=postgres` + `DATABASE_URL` 生效，`/oauth/token` 全链路可用

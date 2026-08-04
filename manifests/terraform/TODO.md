@@ -6,7 +6,8 @@
 - [x] go-oauth2 refresh_token 存储迁移到共享存储（GORM TokenStore，见 internal/store/token_store.go，FC 多实例刷新可用）
 - [x] Dockerfile 多阶段构建（alpine + musl/CGO，非 root），镜像由 deploy-provider workflow 双通道发布（Docker Hub + ACR 个人版实例，`provider/*` tag 触发）
 - [x] GitHub Actions workflow：terraform init / plan / apply，引用 org secrets（`ALIYUN_ACCESS_KEY_ID` / `ALIYUN_ACCESS_KEY_SECRET`，另需 `DB_PASSWORD` / `JWT_SECRET` / `ADMIN_PASSWORD` / ACR / Docker Hub 凭证）；ACR 仓库由主账号创建（PUBLIC），CI 不建仓
-- [ ] 上线验证：`terraform apply` 后通过 `terraform output fc_http_url` 调用 `/oauth/token`、`/userinfo` 确认全链路可用
+- [x] 上线验证：`terraform apply` 后通过 `terraform output fc_http_url` 调用 `/oauth/token`、`/userinfo` 确认全链路可用（2026-08-04 alpha.4 验证通过）
+- [ ] 共享 RDS 实例 AutoPause 待关闭：实例空闲自动暂停会导致部署/访问中断（曾致账号创建卡 13 分钟）；已临时启动实例，**待平台侧关闭 AutoPause**（控制台：实例 → 服务能力 → Serverless 配置）
 
 ## CI 与安全(P1)
 
