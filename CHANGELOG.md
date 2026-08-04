@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.0-alpha.5 (2026-08-04)
+
+- CI：保留共享 RDS Serverless AutoPause（省钱）；deploy job 新增「Ensure RDS Instance Running」步骤（terraform 前幂等启动实例并轮询，最多 3 分钟）
+- 注：GitHub Actions rerun 使用原 run 的 workflow 快照，workflow 变更后需发新 tag 生效
+
 ## 0.1.0-alpha.4 (2026-08-04)
 
 - 修复 FC 无法拉取镜像：关闭 buildx provenance/sbom attestation（其 manifest 平台为 unknown/unknown，FC 镜像优化器拒绝，报 `ImageOptimizingFailed`）
