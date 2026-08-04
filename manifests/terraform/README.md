@@ -6,7 +6,7 @@
 
 | 维度 | 选型 | 说明 |
 |------|------|------|
-| 数据库 | 阿里云 RDS Serverless（PostgreSQL） | 系统级共享实例（由 quanttide-platform 管理）；provider 存储后端当前为 BuntDB（`DB_PATH`），生产需按 dev-guide 对接 PostgreSQL（对齐 pay 的 GORM 方言切换） |
+| 数据库 | 阿里云 RDS Serverless（PostgreSQL） | 系统级共享实例（由 quanttide-platform 管理）；provider 已支持 GORM 方言切换（开发 SQLite / 生产 PostgreSQL，见 docs/fc-adaptation.md Phase 1） |
 | 服务计算 | FaaS（函数计算）+ 容器镜像 | Dockerfile 构建镜像，双通道发布（Docker Hub 对外分发 + 阿里云 ACR 同地域直拉，FC 中国区拉不到 Docker Hub）；服务无需常驻、按调用计费 |
 | 存储与网络 | 随计算/数据库一并解决 | VPC 内网互通（RDS ↔ FC） |
 | API 网关 | **预留（系统层面统一规划）** | 统一 `api.quanttide.com`，路径按应用名（如 `/qtcloud-auth`）；不在本应用 IaC 范围内，由系统级网关统一接入 |
@@ -26,7 +26,7 @@
 | `JWT_SECRET` | `var.jwt_secret` | HS256 签名密钥，生产必须显式配置 |
 | `ADMIN_PASSWORD` | `var.admin_password` | 种子管理员密码，生产必须显式配置 |
 | `SMS_DRIVER` | `var.sms_driver` | 当前仅 `console`；阿里云短信接入见 dev-guide 与 [aliyun-sms-integration](../../../../data/library/aliyun-sms-integration.md) |
-| `DB_DRIVER` / `DATABASE_URL` | RDS 资源自动生成 | 对齐共享 RDS 方案；provider 支持 PostgreSQL 后生效（见 TODO.md） |
+| `DB_DRIVER` / `DATABASE_URL` | RDS 资源自动生成 | 对齐共享 RDS 方案，provider 已支持（GORM，见 docs/fc-adaptation.md） |
 
 ## 使用
 

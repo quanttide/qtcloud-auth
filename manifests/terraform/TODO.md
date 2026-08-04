@@ -2,7 +2,8 @@
 
 ## 上线前(阻塞项)
 
-- [ ] provider 存储后端对接 PostgreSQL（当前为 BuntDB，FC 容器磁盘为临时存储且多实例不共享；对齐 qtcloud-pay 的 `DB_DRIVER` / `DATABASE_URL` 运行时约定），实现后 `DB_DRIVER` / `DATABASE_URL` 环境变量才会被读取
+- [x] provider 存储后端对接 PostgreSQL（GORM，`DB_DRIVER` / `DATABASE_URL` 运行时约定已生效，见 docs/fc-adaptation.md Phase 1；本地开发默认 SQLite）
+- [ ] go-oauth2 refresh_token 存储迁移到共享存储（当前 MemoryTokenStore 为实例本地状态，FC 多实例刷新会失败）
 - [ ] Dockerfile 多阶段构建（见 ROADMAP P3.5，生产镜像 < 20MB），镜像由 deploy-provider workflow 双通道发布（Docker Hub + ACR `registry.cn-hangzhou.aliyuncs.com/quanttide/qtcloud-auth-provider`，`provider/*` tag 触发）
 - [ ] GitHub Actions workflow：terraform init / plan / apply，引用 org secrets（`ALIYUN_ACCESS_KEY_ID` / `ALIYUN_ACCESS_KEY_SECRET`）；ACR 命名空间/仓库幂等创建
 - [ ] 复制 `terraform.tfvars.example` → `terraform.tfvars` 填写真实值（含 `jwt_secret` / `admin_password`），执行 `terraform apply`

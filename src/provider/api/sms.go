@@ -51,6 +51,7 @@ const (
 )
 
 // SendCode POST /oauth/sms/send 发送手机验证码.
+// 验证码与频率限制均基于共享存储（FC 多实例一致），不依赖实例本地状态。
 func (h *AuthHandler) SendCode(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Phone string `json:"phone"`
@@ -64,14 +65,20 @@ func (h *AuthHandler) SendCode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.codeMu.Lock()
-	last, ok := h.codeLastSent[req.Phone]
-	if ok && time.Since(last) < sendSMSRateLimit {
-		h.codeMu.Unlock()
-		WriteOAuthError(w, "rate_limit",
-			fmt.Sprintf("retry after %.0f seconds", sendSMSRateLimit.Seconds()),
-			http.StatusTooManyRequests)
-		return
+	// 频率限制：同一手机号 60s 内只能发送一次（取最近一条验证码的创建时间）
+	if codes, err := h.listCodes(); err == nil {
+		for i := len(codes) - 1; i >= 0; i-- {
+			if codes[i].Phone == req.Phone {
+				created, cerr := time.Parse(time.RFC3339, codes[i].CreatedAt)
+				if cerr == nil && time.Since(created) < sendSMSRateLimit {
+					WriteOAuthError(w, "rate_limit",
+						fmt.Sprintf("retry after %.0f seconds", sendSMSRateLimit.Seconds()),
+						http.StatusTooManyRequests)
+					return
+				}
+				break
+			}
+		}
 	}
 
 	code, _ := generateCode()
@@ -83,9 +90,12 @@ func (h *AuthHandler) SendCode(w http.ResponseWriter, r *http.Request) {
 		Used:      false,
 		CreatedAt: time.Now().Format(time.RFC3339),
 	}
-	h.codeStore[req.Phone] = append(h.codeStore[req.Phone], vc)
-	h.codeLastSent[req.Phone] = time.Now()
-	h.codeMu.Unlock()
+	data, _ := json.Marshal(vc)
+	if _, err := h.store.Create("auth/verification_codes", data); err != nil {
+		slog.Error("create verification code", "error", err)
+		WriteOAuthError(w, "server_error", "failed to store code", http.StatusInternalServerError)
+		return
+	}
 
 	if err := h.smsSender.Send(r.Context(), req.Phone, code); err != nil {
 		slog.Error("send sms", "error", err)
@@ -98,15 +108,28 @@ func (h *AuthHandler) SendCode(w http.ResponseWriter, r *http.Request) {
 
 // ── 内部辅助 ──
 
-func (h *AuthHandler) findValidCode(phone, code string) *model.VerificationCode {
-	h.codeMu.Lock()
-	defer h.codeMu.Unlock()
+// listCodes 从共享存储读取全部验证码（按创建时间升序）。
+func (h *AuthHandler) listCodes() ([]model.VerificationCode, error) {
+	data, err := h.store.List("auth/verification_codes")
+	if err != nil {
+		return nil, err
+	}
+	var codes []model.VerificationCode
+	if err := json.Unmarshal(data, &codes); err != nil {
+		return nil, err
+	}
+	return codes, nil
+}
 
-	codes := h.codeStore[phone]
+func (h *AuthHandler) findValidCode(phone, code string) *model.VerificationCode {
+	codes, err := h.listCodes()
+	if err != nil {
+		return nil
+	}
 	now := time.Now()
 	for i := len(codes) - 1; i >= 0; i-- {
 		vc := codes[i]
-		if vc.Code != code || vc.Used {
+		if vc.Phone != phone || vc.Code != code || vc.Used {
 			continue
 		}
 		exp, err := time.Parse(time.RFC3339, vc.ExpiresAt)
@@ -119,11 +142,18 @@ func (h *AuthHandler) findValidCode(phone, code string) *model.VerificationCode 
 }
 
 func (h *AuthHandler) markCodeUsed(phone, code string) {
-	h.codeMu.Lock()
-	defer h.codeMu.Unlock()
-	for i := range h.codeStore[phone] {
-		if h.codeStore[phone][i].Code == code && !h.codeStore[phone][i].Used {
-			h.codeStore[phone][i].Used = true
+	codes, err := h.listCodes()
+	if err != nil {
+		return
+	}
+	for _, vc := range codes {
+		if vc.Phone == phone && vc.Code == code && !vc.Used {
+			vc.Used = true
+			data, err := json.Marshal(vc)
+			if err != nil {
+				return
+			}
+			_ = h.store.Update("auth/verification_codes", vc.ID, data)
 			return
 		}
 	}

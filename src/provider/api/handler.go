@@ -3,7 +3,6 @@ package api
 import (
 	"encoding/json"
 	"log/slog"
-	"sync"
 	"time"
 
 	"github.com/go-oauth2/oauth2/v4"
@@ -22,24 +21,20 @@ type Storer interface {
 }
 
 // AuthHandler OAuth 2.0 认证处理器.
+// 验证码等数据统一走 Storer（共享存储，FC 多实例可用），不保留本地可变状态。
 type AuthHandler struct {
-	store        Storer
-	secret       []byte                          // JWT 签名密钥
-	smsSender    SMSSender
-	codeStore    map[string][]model.VerificationCode
-	codeLastSent map[string]time.Time
-	codeMu       sync.Mutex
-	oauthMgr     oauth2.Manager
-	oauthSrv     *server.Server
+	store     Storer
+	secret    []byte // JWT 签名密钥
+	smsSender SMSSender
+	oauthMgr  oauth2.Manager
+	oauthSrv  *server.Server
 }
 
 func NewAuthHandler(st Storer, secret string, sender SMSSender) *AuthHandler {
 	return &AuthHandler{
-		store:        st,
-		secret:       []byte(secret),
-		smsSender:    sender,
-		codeStore:    make(map[string][]model.VerificationCode),
-		codeLastSent: make(map[string]time.Time),
+		store:     st,
+		secret:    []byte(secret),
+		smsSender: sender,
 	}
 }
 

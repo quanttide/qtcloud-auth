@@ -25,17 +25,21 @@ FC custom-container ──VPC内网──▶ 共享 RDS PostgreSQL（quanttide-p
 
 ## 改造步骤
 
-### Phase 1 — 存储后端 PostgreSQL（阻塞项）
+### Phase 1 — 存储后端 PostgreSQL（✅ 已完成）
 
-1. 引入依赖：`gorm.io/gorm`、`gorm.io/driver/postgres`、`gorm.io/driver/sqlite`
-2. 仿照 pay `internal/app/app.go` 新增 `Open(driver, dsn)` + `OpenDB()`：
+1. 引入依赖：`gorm.io/gorm`、`gorm.io/driver/postgres`、`gorm.io/driver/sqlite`（版本对齐 qtcloud-pay：gorm v1.31.2 / postgres v1.6.2 / sqlite v1.6.0）
+2. 新增 `internal/app`（`Open(driver, dsn)` + `OpenDB()`）：
    - `DB_DRIVER=postgres` → `DATABASE_URL` 作 DSN
    - 默认 → `DB_SQLITE_DSN`（缺省 `qtcloud-auth.db`），`SetMaxOpenConns(1)` 规避 SQLite 单写者锁
    - 启动时 `AutoMigrate` 全部模型（User / Role / VerificationCode）
-3. 用 GORM 实现现有 `Storer` 接口（List/Create/Get/Update），`main.go` 按 driver 分支选择存储实现；BuntDB 实现移除（SQLite 已覆盖本地开发场景）
+3. 新增 `internal/store`：GORM 实现 `Storer` 接口（UUID 字符串主键，每个集合一张表），`main.go` 移除 BuntDB；验证码与发送频率限制也改走 Storer（跨实例共享）
 4. 注意：`gorm.io/driver/sqlite` 依赖 CGO（mattn/go-sqlite3）。生产镜像只走 postgres，用 `CGO_ENABLED=0` 静态编译；本地开发正常 CGO 编译即可（见 Phase 5）
 
-**验证**：本地 `DB_DRIVER=postgres DATABASE_URL=...` 启动，跑通 `/oauth/token` → `/userinfo`；`tests/` 集成测试在 postgres 后端下全绿。
+**验证**：`go test ./...` 全绿（含 `internal/store` 新增用例）；`tests/` 集成测试 11 个全过（SQLite 后端）。
+
+**剩余缺口（FC 多实例）**：
+- go-oauth2 的 `MemoryTokenStore`（refresh_token 存储）仍是实例本地状态，跨实例刷新会失败——需实现共享 `oauth2.TokenStore`（GORM 存储）
+- 过期验证码未清理（每次发送一条记录，P2 增加清理任务）
 
 ### Phase 2 — 阿里云短信
 
@@ -72,4 +76,4 @@ FC custom-container ──VPC内网──▶ 共享 RDS PostgreSQL（quanttide-p
 
 ## 实施顺序
 
-Phase 1（存储）→ Phase 5（镜像/CI，打通端到端）→ Phase 2（短信）→ Phase 4（可观测）→ Phase 3（密钥收敛，可并行）。
+Phase 1（存储 ✅ 已落地，剩 refresh_token 共享存储缺口）→ Phase 5（镜像/CI，打通端到端）→ Phase 2（短信）→ Phase 4（可观测）→ Phase 3（密钥收敛，可并行）。

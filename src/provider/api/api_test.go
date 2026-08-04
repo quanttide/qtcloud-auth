@@ -22,53 +22,90 @@ import (
 
 // ── Mocks ──
 
+// mockStorer 内存模拟：users / verification_codes 两个集合。
+// 注：错误字段仅作用于 users 集合，保证验证码写入/读取路径可控。
 type mockStorer struct {
 	users     []model.User
+	codes     []model.VerificationCode
 	listErr   error
 	createErr error
 	getErr    error
 	updateErr error
 }
 
-func (m *mockStorer) List(string) ([]byte, error) {
-	if m.listErr != nil {
-		return nil, m.listErr
+func (m *mockStorer) List(collection string) ([]byte, error) {
+	switch collection {
+	case "auth/verification_codes":
+		return json.Marshal(m.codes)
+	default:
+		if m.listErr != nil {
+			return nil, m.listErr
+		}
+		return json.Marshal(m.users)
 	}
-	return json.Marshal(m.users)
 }
 
-func (m *mockStorer) Create(_ string, data []byte) (string, error) {
-	if m.createErr != nil {
-		return "", m.createErr
+func (m *mockStorer) Create(collection string, data []byte) (string, error) {
+	switch collection {
+	case "auth/verification_codes":
+		var c model.VerificationCode
+		if err := json.Unmarshal(data, &c); err != nil {
+			return "", err
+		}
+		c.ID = fmt.Sprintf("c%d", len(m.codes)+1)
+		m.codes = append(m.codes, c)
+		return c.ID, nil
+	default:
+		if m.createErr != nil {
+			return "", m.createErr
+		}
+		var u model.User
+		if err := json.Unmarshal(data, &u); err != nil {
+			return "", err
+		}
+		u.ID = fmt.Sprintf("u%d", len(m.users)+1)
+		m.users = append(m.users, u)
+		return u.ID, nil
 	}
-	var u model.User
-	if err := json.Unmarshal(data, &u); err != nil {
-		return "", err
-	}
-	u.ID = fmt.Sprintf("u%d", len(m.users)+1)
-	m.users = append(m.users, u)
-	return u.ID, nil
 }
 
-func (m *mockStorer) Get(_ string, id string) ([]byte, error) {
-	if m.getErr != nil {
-		return nil, m.getErr
-	}
-	for _, u := range m.users {
-		if u.ID == id {
-			return json.Marshal(u)
+func (m *mockStorer) Get(collection string, id string) ([]byte, error) {
+	switch collection {
+	case "auth/verification_codes":
+		for _, c := range m.codes {
+			if c.ID == id {
+				return json.Marshal(c)
+			}
+		}
+	default:
+		if m.getErr != nil {
+			return nil, m.getErr
+		}
+		for _, u := range m.users {
+			if u.ID == id {
+				return json.Marshal(u)
+			}
 		}
 	}
 	return nil, fmt.Errorf("not found")
 }
 
-func (m *mockStorer) Update(_ string, id string, data []byte) error {
-	if m.updateErr != nil {
-		return m.updateErr
-	}
-	for i := range m.users {
-		if m.users[i].ID == id {
-			return json.Unmarshal(data, &m.users[i])
+func (m *mockStorer) Update(collection string, id string, data []byte) error {
+	switch collection {
+	case "auth/verification_codes":
+		for i := range m.codes {
+			if m.codes[i].ID == id {
+				return json.Unmarshal(data, &m.codes[i])
+			}
+		}
+	default:
+		if m.updateErr != nil {
+			return m.updateErr
+		}
+		for i := range m.users {
+			if m.users[i].ID == id {
+				return json.Unmarshal(data, &m.users[i])
+			}
 		}
 	}
 	return fmt.Errorf("not found")
@@ -92,6 +129,14 @@ func (c *corruptStorer) Get(string, string) ([]byte, error) { return []byte(`not
 func (c *corruptStorer) Update(string, string, []byte) error { return nil }
 
 // ── 辅助 ──
+
+// lastCode 返回最近一次发送的验证码（mock 按创建顺序追加）。
+func lastCode(st *mockStorer) string {
+	if len(st.codes) == 0 {
+		return ""
+	}
+	return st.codes[len(st.codes)-1].Code
+}
 
 func newTestHandler() *AuthHandler {
 	h := NewAuthHandler(&mockStorer{}, "test-secret", &mockSMSSender{})
@@ -688,7 +733,9 @@ func TestToken_Refresh_Success(t *testing.T) {
 }
 
 func TestToken_SMSCode_Success(t *testing.T) {
-	h := newTestHandler()
+	st := &mockStorer{}
+	h := NewAuthHandler(st, "test-secret", &mockSMSSender{})
+	h.SetupOAuth()
 
 	body := `{"phone":"13800138000"}`
 	r1 := httptest.NewRequest("POST", "/oauth/sms/send", bytes.NewReader([]byte(body)))
@@ -699,13 +746,10 @@ func TestToken_SMSCode_Success(t *testing.T) {
 		t.Fatalf("send code failed: %d", w1.Code)
 	}
 
-	h.codeMu.Lock()
-	codes := h.codeStore["13800138000"]
-	h.codeMu.Unlock()
-	if len(codes) == 0 {
+	if len(st.codes) == 0 {
 		t.Fatal("no code stored")
 	}
-	smsCode := codes[len(codes)-1].Code
+	smsCode := lastCode(st)
 
 	form := url.Values{"grant_type": {"sms_code"}, "phone": {"13800138000"}, "code": {smsCode}}
 	r2 := httptest.NewRequest("POST", "/oauth/token", strings.NewReader(form.Encode()))
@@ -789,9 +833,7 @@ func TestTokenSMS_CreateUserError(t *testing.T) {
 	w1 := httptest.NewRecorder()
 	h.SendCode(w1, r1)
 
-	h.codeMu.Lock()
-	code := h.codeStore["13800138000"][0].Code
-	h.codeMu.Unlock()
+	code := lastCode(st)
 
 	form := url.Values{"grant_type": {"sms_code"}, "phone": {"13800138000"}, "code": {code}}
 	r2 := httptest.NewRequest("POST", "/oauth/token", strings.NewReader(form.Encode()))
@@ -807,7 +849,7 @@ func TestTokenSMS_CreateUserError(t *testing.T) {
 // tokenSMS 错误路径：findUserByPhone 错误
 func TestTokenSMS_FindUserError(t *testing.T) {
 	st := &mockStorer{listErr: fmt.Errorf("store down")}
-	h := NewAuthHandler(&mockStorer{}, "secret", &mockSMSSender{})
+	h := NewAuthHandler(st, "secret", &mockSMSSender{})
 	h.SetupOAuth()
 
 	body := `{"phone":"13800138000"}`
@@ -816,11 +858,7 @@ func TestTokenSMS_FindUserError(t *testing.T) {
 	w1 := httptest.NewRecorder()
 	h.SendCode(w1, r1)
 
-	h.codeMu.Lock()
-	code := h.codeStore["13800138000"][0].Code
-	h.codeMu.Unlock()
-
-	h.store = st
+	code := lastCode(st)
 
 	form := url.Values{"grant_type": {"sms_code"}, "phone": {"13800138000"}, "code": {code}}
 	r2 := httptest.NewRequest("POST", "/oauth/token", strings.NewReader(form.Encode()))
@@ -850,9 +888,7 @@ func TestTokenSMS_UpdatePhoneVerifiedError(t *testing.T) {
 	w1 := httptest.NewRecorder()
 	h.SendCode(w1, r1)
 
-	h.codeMu.Lock()
-	code := h.codeStore["13800138000"][0].Code
-	h.codeMu.Unlock()
+	code := lastCode(st)
 
 	form := url.Values{"grant_type": {"sms_code"}, "phone": {"13800138000"}, "code": {code}}
 	r2 := httptest.NewRequest("POST", "/oauth/token", strings.NewReader(form.Encode()))
@@ -868,7 +904,8 @@ func TestTokenSMS_UpdatePhoneVerifiedError(t *testing.T) {
 // tokenSMS 错误路径：GenerateAccessToken 失败
 // 重建一个不含 client store 的 manager 来触发
 func TestTokenSMS_GenerateTokenError(t *testing.T) {
-	h := NewAuthHandler(&mockStorer{}, "secret", &mockSMSSender{})
+	st := &mockStorer{}
+	h := NewAuthHandler(st, "secret", &mockSMSSender{})
 	// 用不含 client 的 manager 覆盖 oauthMgr
 	mgr := manage.NewDefaultManager()
 	ts, _ := store.NewMemoryTokenStore()
@@ -886,9 +923,7 @@ func TestTokenSMS_GenerateTokenError(t *testing.T) {
 	w1 := httptest.NewRecorder()
 	h.SendCode(w1, r1)
 
-	h.codeMu.Lock()
-	code := h.codeStore["13800138000"][0].Code
-	h.codeMu.Unlock()
+	code := lastCode(st)
 
 	// 用空的 oauthMgr 覆盖（没有 client store 的 manager）
 	h.oauthMgr = &emptyManager{}
@@ -1047,14 +1082,16 @@ func TestUserInfo_NoSubClaim(t *testing.T) {
 // ── findValidCode / markCodeUsed ──
 
 func TestFindValidCode(t *testing.T) {
-	h := newTestHandler()
+	st := &mockStorer{}
+	h := NewAuthHandler(st, "test-secret", &mockSMSSender{})
 	vc := model.VerificationCode{
+		ID:        "c1",
 		Phone:     "13800138000",
 		Code:      "123456",
 		ExpiresAt: time.Now().Add(time.Hour).Format(time.RFC3339),
 		Used:      false,
 	}
-	h.codeStore["13800138000"] = append(h.codeStore["13800138000"], vc)
+	st.codes = append(st.codes, vc)
 
 	found := h.findValidCode("13800138000", "123456")
 	if found == nil {
@@ -1071,11 +1108,12 @@ func TestFindValidCode(t *testing.T) {
 	}
 
 	expired := model.VerificationCode{
+		ID:        "c2",
 		Phone:     "13800138000",
 		Code:      "654321",
 		ExpiresAt: time.Now().Add(-time.Hour).Format(time.RFC3339),
 	}
-	h.codeStore["13800138000"] = append(h.codeStore["13800138000"], expired)
+	st.codes = append(st.codes, expired)
 	found3 := h.findValidCode("13800138000", "654321")
 	if found3 != nil {
 		t.Error("expired code should not be found")
@@ -1089,14 +1127,16 @@ func TestFindValidCode(t *testing.T) {
 
 // findValidCode 错误路径：不可解析的 ExpiresAt
 func TestFindValidCode_BadExpiresAt(t *testing.T) {
-	h := newTestHandler()
+	st := &mockStorer{}
+	h := NewAuthHandler(st, "test-secret", &mockSMSSender{})
 	vc := model.VerificationCode{
+		ID:        "c1",
 		Phone:     "13800138000",
 		Code:      "123456",
 		ExpiresAt: "not-a-date",
 		Used:      false,
 	}
-	h.codeStore["13800138000"] = append(h.codeStore["13800138000"], vc)
+	st.codes = append(st.codes, vc)
 
 	found := h.findValidCode("13800138000", "123456")
 	if found != nil {
@@ -1189,9 +1229,7 @@ func TestTokenSMS_UpdatesPhoneVerified(t *testing.T) {
 	w1 := httptest.NewRecorder()
 	h.SendCode(w1, r1)
 
-	h.codeMu.Lock()
-	code := h.codeStore["13800138000"][len(h.codeStore["13800138000"])-1].Code
-	h.codeMu.Unlock()
+	code := lastCode(st)
 
 	form := url.Values{"grant_type": {"sms_code"}, "phone": {"13800138000"}, "code": {code}}
 	r2 := httptest.NewRequest("POST", "/oauth/token", strings.NewReader(form.Encode()))

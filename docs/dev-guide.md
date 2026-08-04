@@ -51,6 +51,8 @@ TEST_BASE_URL=http://localhost:8081 pytest -v
 qtcloud-auth/
 ├── src/provider/          ← Go 认证提供者
 │   ├── api/               ← HTTP 端点（handler + middleware）
+│   ├── internal/app/      ← 数据库打开与迁移（GORM，对齐 qtcloud-pay 的 DB_DRIVER 约定）
+│   ├── internal/store/    ← Storer 的 GORM 实现（users / roles / verification_codes）
 │   ├── model/             ← 数据模型（User, Role, VerificationCode）
 │   ├── main.go            ← 服务入口
 │   └── go.mod
@@ -74,7 +76,9 @@ qtcloud-auth/
 | `ADMIN_PASSWORD` | `123456` | 管理员密码 |
 | `SMS_DRIVER` | `console` | SMS 发送器。`console` 输出到日志，其他值待扩展（如 `aliyun`） |
 | `SMS_TEST_CODE` | （不设置） | 设为 `123456` 则验证码固定，用于集成测试 |
-| `DB_PATH` | `:memory:` | BuntDB 数据库路径。`data.db` 持久化到文件，重启不丢数据 |
+| `DB_DRIVER` | （不设置） | 数据库驱动。`postgres` 时使用 `DATABASE_URL`；默认 SQLite |
+| `DATABASE_URL` | （不设置） | PostgreSQL DSN（`DB_DRIVER=postgres` 时生效），如 `postgres://user:pass@host:5432/db?sslmode=disable` |
+| `DB_SQLITE_DSN` | `qtcloud-auth.db` | SQLite 路径（开发默认；`:memory:` 为纯内存，重启不丢文件则用文件路径） |
 
 | 硬编码常量 | 值 | 说明 |
 |-----------|-----|------|
@@ -105,7 +109,7 @@ type SMSSender interface {
 
 ## 存储后端
 
-`Storer` 接口抽象数据持久化：
+`Storer` 接口抽象数据持久化（集合 + JSON 记录，见 `api/handler.go`）：
 
 ```go
 type Storer interface {
@@ -116,12 +120,12 @@ type Storer interface {
 }
 ```
 
-当前使用 **BuntDB**（[`DB_PATH` 环境变量](#) 控制）：
+当前使用 **GORM**（`internal/app` 打开数据库，`internal/store` 实现 Storer）：
 
-- **`:memory:`**（默认）— 纯内存，进程重启数据丢失，适合开发调试
-- **文件路径**（如 `data.db`）— 持久化到磁盘，重启不丢
+- **开发默认 SQLite**（`DB_SQLITE_DSN`，缺省 `qtcloud-auth.db`）— 零依赖，单文件，重启不丢
+- **生产 PostgreSQL**（`DB_DRIVER=postgres` + `DATABASE_URL`）— 对接系统级共享 RDS，FC 多实例共享同一份数据
 
-可按需对接 SQLite / MySQL / PostgreSQL 等。
+模型（User / Role / VerificationCode）在启动时由 `AutoMigrate` 建表；验证码与频率限制同样走 Storer（FC 多实例可用），不保留实例本地状态。
 
 ## 部署
 
