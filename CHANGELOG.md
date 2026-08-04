@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.0-alpha.1 (2026-08-04)
+
+- 存储后端迁移：BuntDB → GORM（开发 SQLite / 生产 PostgreSQL），`DB_DRIVER` / `DATABASE_URL` / `DB_SQLITE_DSN` 环境变量替代 `DB_PATH`
+- 密码哈希升级：SHA256 → bcrypt（DefaultCost）
+- 短信发送器可配置：新增 `SMS_DRIVER` 环境变量
+- 验证码与发送频率限制迁移到共享存储（FC 多实例可用）
+- OAuth 令牌存储：GORM 实现 `oauth2.TokenStore`，refresh_token 跨实例可用、刷新轮换作废旧令牌
+- 部署：新增 Terraform IaC（FC 3.0 + 共享 RDS，manifests/terraform）与 FC 适配规划（docs/fc-adaptation.md）
+
 ## 0.0.1 (2026-07-11)
 
 - 初始化认证服务：OAuth 2.0 令牌端点、短信验证码、用户信息端点
