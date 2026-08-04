@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.0-alpha.7 (2026-08-04)
+
+- 修复 Ensure RDS 步骤成功路径误报失败：`[ x ] && { exit 1; }` 作为脚本最后一条命令时，条件为假返回 1 即脚本以 1 退出（与 set -e 无关）——改为 if 语句
+
 ## 0.1.0-alpha.6 (2026-08-04)
 
 - 修复 Ensure RDS 步骤：`terraform state pull` 中 data source 类型为 `terraform_remote_state`（无 `data.` 前缀），outputs 嵌套在 `.outputs.value` 下——实例 ID 提取修正

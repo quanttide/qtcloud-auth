@@ -155,7 +155,11 @@ jobs:
               echo "轮询 ${i}: ${S}"
               [ "${S}" = "Running" ] && break
             done
-            [ "${S}" != "Running" ] && { echo "::error::RDS 实例未能在 3 分钟内启动"; exit 1; }
+            # 注意：不能用 `[ x ] && { exit 1; }`——set -e 下条件为假时整体返回非零也会退出
+            if [ "${S}" != "Running" ]; then
+              echo "::error::RDS 实例未能在 3 分钟内启动"
+              exit 1
+            fi
           else
             echo "实例已 Running"
           fi
