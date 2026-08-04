@@ -75,6 +75,10 @@ jobs:
         with:
           context: src/provider
           push: true
+          # 关键：关闭 provenance/sbom attestation——其 manifest 平台为 unknown/unknown，
+          # FC 3.0 镜像优化器会拒绝（ImageOptimizingFailed: platform of image is unknown/unknown）
+          provenance: false
+          sbom: false
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/qtcloud-auth-provider:${{ steps.image.outputs.tag }}
             ${{ secrets.DOCKERHUB_USERNAME }}/qtcloud-auth-provider:latest

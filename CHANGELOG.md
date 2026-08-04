@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.0-alpha.4 (2026-08-04)
+
+- 修复 FC 无法拉取镜像：关闭 buildx provenance/sbom attestation（其 manifest 平台为 unknown/unknown，FC 镜像优化器拒绝，报 `ImageOptimizingFailed`）
+
 ## 0.1.0-alpha.3 (2026-08-04)
 
 - CI 修复：ACR 地址改走 secret（`ALIYUN_ACR_REGISTRY`），实例专属域名不再写入代码；移除 CI 内 ACR 建仓步骤（RAM 用户无 ACR 权限，aliyun CLI cr API 漂移），仓库由主账号一次性创建（PUBLIC）
