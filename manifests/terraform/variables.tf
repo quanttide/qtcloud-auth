@@ -35,9 +35,8 @@ variable "db_password" {
 }
 
 variable "image" {
-  description = "FC 容器镜像（阿里云 ACR 同地域公开仓库，FC 可直拉；Docker Hub 在中国区不可达，仅作镜像分发镜像，双通道发布）"
+  description = "FC 容器镜像。由 CI 注入（TF_VAR_image 拼接 secret ALIYUN_ACR_REGISTRY 的实例地址）或 terraform.tfvars 提供；实例地址属敏感信息不写默认值"
   type        = string
-  default     = "registry.cn-hangzhou.aliyuncs.com/quanttide/qtcloud-auth-provider:latest"
 }
 
 variable "jwt_secret" {

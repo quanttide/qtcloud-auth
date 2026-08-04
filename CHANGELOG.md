@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.0-alpha.3 (2026-08-04)
+
+- CI 修复：ACR 地址改走 secret（`ALIYUN_ACR_REGISTRY`），实例专属域名不再写入代码；移除 CI 内 ACR 建仓步骤（RAM 用户无 ACR 权限，aliyun CLI cr API 漂移），仓库由主账号一次性创建（PUBLIC）
+- 镜像地址敏感化：`image` 变量不再有默认值，由 CI 注入或 tfvars 提供
+
 ## 0.1.0-alpha.2 (2026-08-04)
 
 - 项目结构对齐 Go 社区惯例：入口迁至 `cmd/server`，`api` / `model` 迁入 `internal/`

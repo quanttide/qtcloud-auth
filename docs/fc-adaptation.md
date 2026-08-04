@@ -63,8 +63,8 @@ FC custom-container ──VPC内网──▶ 共享 RDS PostgreSQL（quanttide-p
 ### Phase 5 — 镜像与发布（✅ 已完成）
 
 1. Dockerfile 多阶段构建（alpine + musl/CGO，非 root 运行）：`go build ./cmd/server`，`goproxy.cn` 依赖代理（本地实测可构建）
-2. CI workflow（deploy-provider，对齐 pay）：`provider/*` tag 触发 → 镜像双通道发布（Docker Hub + ACR `registry.cn-hangzhou.aliyuncs.com/quanttide/qtcloud-auth-provider`）→ `terraform init/plan/apply`
-3. ACR 命名空间/仓库由 CI 幂等创建（实例版 API，PUBLIC，FC 免凭证直拉）
+2. CI workflow（deploy-provider，对齐 pay）：`provider/*` tag 触发 → 镜像双通道发布（Docker Hub + ACR 个人版实例，地址由 secret `ALIYUN_ACR_REGISTRY` 注入，不写代码）→ `terraform init/plan/apply`
+3. ACR 仓库由**主账号一次性创建**（PUBLIC，FC 免凭证直拉）；CI 不建仓（RAM 用户无 ACR 权限，且 aliyun CLI 的 cr API 不稳定）
 4. 部署环境变量：`TF_VAR_db_password` / `TF_VAR_jwt_secret` / `TF_VAR_admin_password`（org secrets）
 
 **验证**：本地 `docker build` + 容器运行通过（token 端点 200）。镜像 34.3MB（CGO+musl sqlite 所致，pay 同约束；<20MB 需纯 Go sqlite 驱动或仅 postgres 镜像，P2）。

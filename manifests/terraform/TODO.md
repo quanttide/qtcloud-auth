@@ -4,8 +4,8 @@
 
 - [x] provider 存储后端对接 PostgreSQL（GORM，`DB_DRIVER` / `DATABASE_URL` 运行时约定已生效，见 docs/fc-adaptation.md Phase 1；本地开发默认 SQLite）
 - [x] go-oauth2 refresh_token 存储迁移到共享存储（GORM TokenStore，见 internal/store/token_store.go，FC 多实例刷新可用）
-- [x] Dockerfile 多阶段构建（alpine + musl/CGO，非 root），镜像由 deploy-provider workflow 双通道发布（Docker Hub + ACR `registry.cn-hangzhou.aliyuncs.com/quanttide/qtcloud-auth-provider`，`provider/*` tag 触发）
-- [x] GitHub Actions workflow：terraform init / plan / apply，引用 org secrets（`ALIYUN_ACCESS_KEY_ID` / `ALIYUN_ACCESS_KEY_SECRET`，另需 `DB_PASSWORD` / `JWT_SECRET` / `ADMIN_PASSWORD` / ACR / Docker Hub 凭证）；ACR 命名空间/仓库由 CI 幂等创建（PUBLIC）
+- [x] Dockerfile 多阶段构建（alpine + musl/CGO，非 root），镜像由 deploy-provider workflow 双通道发布（Docker Hub + ACR 个人版实例，`provider/*` tag 触发）
+- [x] GitHub Actions workflow：terraform init / plan / apply，引用 org secrets（`ALIYUN_ACCESS_KEY_ID` / `ALIYUN_ACCESS_KEY_SECRET`，另需 `DB_PASSWORD` / `JWT_SECRET` / `ADMIN_PASSWORD` / ACR / Docker Hub 凭证）；ACR 仓库由主账号创建（PUBLIC），CI 不建仓
 - [ ] 上线验证：`terraform apply` 后通过 `terraform output fc_http_url` 调用 `/oauth/token`、`/userinfo` 确认全链路可用
 
 ## CI 与安全(P1)
