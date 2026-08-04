@@ -1,6 +1,6 @@
 # provider 适配 FC 规划
 
-目标：让 `src/provider`（Go 认证服务）能在阿里云 FC 3.0 custom-container 上稳定运行，基础设施已由 [manifests/terraform](../manifests/terraform/README.md) 就绪。本规划对齐 qtcloud-pay 已落地的模式（GORM 方言切换 + `DB_DRIVER`/`DATABASE_URL` 运行时约定）。
+目标：让 `src/provider`（Go 认证服务）能在阿里云 FC 3.0 custom-container 上稳定运行，基础设施已由 [manifests/terraform](../../manifests/terraform/README.md) 就绪。本规划对齐 qtcloud-pay 已落地的模式（GORM 方言切换 + `DB_DRIVER`/`DATABASE_URL` 运行时约定）。
 
 ## 现状盘点：哪些已适配、哪些阻塞
 
