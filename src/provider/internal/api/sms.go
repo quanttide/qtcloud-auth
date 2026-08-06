@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"math/big"
 	"net/http"
+	"net/mail"
 	"os"
 	"regexp"
 	"time"
@@ -32,6 +33,11 @@ var phoneRegexp = regexp.MustCompile(`^1[3-9]\d{9}$`)
 
 func isValidPhone(phone string) bool {
 	return phoneRegexp.MatchString(phone)
+}
+
+func isValidEmail(email string) bool {
+	addr, err := mail.ParseAddress(email)
+	return err == nil && addr.Address == email
 }
 
 func generateCode() (string, error) {

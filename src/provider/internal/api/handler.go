@@ -90,6 +90,24 @@ func (h *AuthHandler) findUserByPhone(phone string) (*model.User, error) {
 	return nil, nil
 }
 
+// findUserByLogin 按 用户名/邮箱/手机号 任一方式查找（密码登录统一入口）。
+func (h *AuthHandler) findUserByLogin(login string) (*model.User, error) {
+	data, err := h.store.List("auth/users")
+	if err != nil {
+		return nil, err
+	}
+	var users []model.User
+	if err := json.Unmarshal(data, &users); err != nil {
+		return nil, err
+	}
+	for _, u := range users {
+		if u.Username == login || u.Email == login || u.Phone == login {
+			return &u, nil
+		}
+	}
+	return nil, nil
+}
+
 // ── JWT 令牌验证（供中间件和 UserInfo 使用） ──
 
 // parseToken 解析并验证 Bearer JWT.

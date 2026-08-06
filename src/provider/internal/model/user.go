@@ -3,6 +3,7 @@ package model
 type User struct {
 	ID            string `json:"id"`
 	Username      string `json:"username"`
+	Email         string `json:"email"`
 	PasswordHash  string `json:"password_hash"`
 	Phone         string `json:"phone"`
 	PhoneVerified bool   `json:"phone_verified"`

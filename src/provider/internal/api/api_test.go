@@ -1290,3 +1290,151 @@ func TestMarkCodeUsed_NotFound(t *testing.T) {
 	h := newTestHandler()
 	h.markCodeUsed("13800138000", "000000") // should not panic
 }
+
+// ── Register（用户名/密码注册） ──
+
+func TestRegister_Success(t *testing.T) {
+	h := newTestHandler()
+	body := `{"username":"alice","password":"secret1","email":"alice@example.com","phone":"13900139001"}`
+	r := httptest.NewRequest("POST", "/oauth/register", bytes.NewReader([]byte(body)))
+	w := httptest.NewRecorder()
+	h.Register(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, body=%s", w.Code, w.Body.String())
+	}
+	var resp struct {
+		AccessToken string `json:"access_token"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp.AccessToken == "" {
+		t.Error("expected access_token")
+	}
+
+	u, _ := h.findUserByLogin("alice")
+	if u == nil || u.Email != "alice@example.com" || u.Phone != "13900139001" {
+		t.Errorf("user not created correctly: %+v", u)
+	}
+	if u.PasswordHash == "secret1" {
+		t.Error("password must be hashed")
+	}
+}
+
+func TestRegister_ThenPasswordLogin(t *testing.T) {
+	h := newTestHandler()
+	body := `{"username":"bob","password":"secret1","email":"bob@example.com"}`
+	r := httptest.NewRequest("POST", "/oauth/register", bytes.NewReader([]byte(body)))
+	w := httptest.NewRecorder()
+	h.Register(w, r)
+	if w.Code != http.StatusOK {
+		t.Fatalf("register failed: %d %s", w.Code, w.Body.String())
+	}
+
+	// 用户名登录
+	form := url.Values{"grant_type": {"password"}, "username": {"bob"}, "password": {"secret1"}}
+	r2 := httptest.NewRequest("POST", "/oauth/token", strings.NewReader(form.Encode()))
+	r2.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w2 := httptest.NewRecorder()
+	h.Token(w2, r2)
+	if w2.Code != http.StatusOK {
+		t.Fatalf("login by username failed: %d", w2.Code)
+	}
+
+	// 邮箱登录
+	form = url.Values{"grant_type": {"password"}, "username": {"bob@example.com"}, "password": {"secret1"}}
+	r3 := httptest.NewRequest("POST", "/oauth/token", strings.NewReader(form.Encode()))
+	r3.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w3 := httptest.NewRecorder()
+	h.Token(w3, r3)
+	if w3.Code != http.StatusOK {
+		t.Fatalf("login by email failed: %d", w3.Code)
+	}
+}
+
+func TestRegister_DuplicateUsername(t *testing.T) {
+	h := newTestHandler()
+	body := `{"username":"carol","password":"secret1"}`
+	r := httptest.NewRequest("POST", "/oauth/register", bytes.NewReader([]byte(body)))
+	h.Register(httptest.NewRecorder(), r)
+
+	body2 := `{"username":"carol","password":"secret2"}`
+	r2 := httptest.NewRequest("POST", "/oauth/register", bytes.NewReader([]byte(body2)))
+	w2 := httptest.NewRecorder()
+	h.Register(w2, r2)
+	if w2.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d", w2.Code)
+	}
+}
+
+func TestRegister_EmailConflict(t *testing.T) {
+	h := newTestHandler()
+	body := `{"username":"dave","email":"dup@example.com","password":"secret1"}`
+	h.Register(httptest.NewRecorder(), httptest.NewRequest("POST", "/oauth/register", bytes.NewReader([]byte(body))))
+
+	body2 := `{"username":"eve","email":"dup@example.com","password":"secret1"}`
+	w2 := httptest.NewRecorder()
+	h.Register(w2, httptest.NewRequest("POST", "/oauth/register", bytes.NewReader([]byte(body2))))
+	if w2.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d", w2.Code)
+	}
+}
+
+func TestRegister_PhoneConflict(t *testing.T) {
+	h := newTestHandler()
+	body := `{"username":"frank","phone":"13900139002","password":"secret1"}`
+	h.Register(httptest.NewRecorder(), httptest.NewRequest("POST", "/oauth/register", bytes.NewReader([]byte(body))))
+
+	body2 := `{"username":"grace","phone":"13900139002","password":"secret1"}`
+	w2 := httptest.NewRecorder()
+	h.Register(w2, httptest.NewRequest("POST", "/oauth/register", bytes.NewReader([]byte(body2))))
+	if w2.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d", w2.Code)
+	}
+}
+
+func TestRegister_Validation(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+	}{
+		{"short password", `{"username":"heidi","password":"123"}`},
+		{"short username", `{"username":"ab","password":"secret1"}`},
+		{"bad email", `{"username":"ivan","password":"secret1","email":"not-an-email"}`},
+		{"bad phone", `{"username":"judy","password":"secret1","phone":"123"}`},
+		{"bad json", `not json`},
+		{"empty", `{}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newTestHandler()
+			w := httptest.NewRecorder()
+			h.Register(w, httptest.NewRequest("POST", "/oauth/register", bytes.NewReader([]byte(tc.body))))
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("expected 400, got %d", w.Code)
+			}
+		})
+	}
+}
+
+func TestFindUserByLogin(t *testing.T) {
+	h := newTestHandler()
+	body := `{"username":"ken","password":"secret1","email":"ken@example.com","phone":"13900139003"}`
+	h.Register(httptest.NewRecorder(), httptest.NewRequest("POST", "/oauth/register", bytes.NewReader([]byte(body))))
+
+	for _, login := range []string{"ken", "ken@example.com", "13900139003"} {
+		u, err := h.findUserByLogin(login)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if u == nil || u.Username != "ken" {
+			t.Errorf("findUserByLogin(%q) = %+v", login, u)
+		}
+	}
+
+	u, _ := h.findUserByLogin("nobody")
+	if u != nil {
+		t.Errorf("expected nil for unknown login, got %+v", u)
+	}
+}

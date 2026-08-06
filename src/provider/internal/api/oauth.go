@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-oauth2/oauth2/v4"
@@ -44,9 +45,9 @@ func (h *AuthHandler) SetupOAuth() *server.Server {
 	// Server
 	srv := server.NewServer(server.NewConfig(), mgr)
 
-	// 密码授权：委托给我们的验证逻辑
+	// 密码授权：委托给我们的验证逻辑（支持 用户名/邮箱/手机号 任一登录）
 	srv.PasswordAuthorizationHandler = func(ctx context.Context, clientID, username, password string) (string, error) {
-		user, err := h.findUserByUsername(username)
+		user, err := h.findUserByLogin(username)
 		if err != nil {
 			return "", err
 		}
@@ -160,6 +161,122 @@ func (h *AuthHandler) tokenSMS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	WriteJSON(w, h.oauthSrv.GetTokenData(ti), http.StatusOK)
+}
+
+// Register POST /oauth/register 用户名/密码注册（支持可选 email/phone），成功即签发 JWT.
+func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+		Email    string `json:"email"`
+		Phone    string `json:"phone"`
+		Nickname string `json:"nickname"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		WriteOAuthError(w, "invalid_request", "invalid request body", http.StatusBadRequest)
+		return
+	}
+	req.Username = strings.TrimSpace(req.Username)
+	req.Email = strings.TrimSpace(req.Email)
+	req.Phone = strings.TrimSpace(req.Phone)
+
+	if len(req.Username) < 3 || len(req.Username) > 64 {
+		WriteOAuthError(w, "invalid_request", "username must be 3-64 characters", http.StatusBadRequest)
+		return
+	}
+	if len(req.Password) < 6 {
+		WriteOAuthError(w, "invalid_request", "password must be at least 6 characters", http.StatusBadRequest)
+		return
+	}
+	if req.Email != "" && !isValidEmail(req.Email) {
+		WriteOAuthError(w, "invalid_request", "invalid email", http.StatusBadRequest)
+		return
+	}
+	if req.Phone != "" && !isValidPhone(req.Phone) {
+		WriteOAuthError(w, "invalid_request", "invalid phone number", http.StatusBadRequest)
+		return
+	}
+
+	// 唯一性：用户名/邮箱/手机号任一冲突即拒绝
+	existing, err := h.findUserByLogin(req.Username)
+	if err != nil {
+		slog.Error("register check username", "error", err)
+		WriteOAuthError(w, "server_error", "internal error", http.StatusInternalServerError)
+		return
+	}
+	if existing != nil {
+		WriteOAuthError(w, "invalid_request", "username already registered", http.StatusConflict)
+		return
+	}
+	if req.Email != "" {
+		existing, err = h.findUserByLogin(req.Email)
+		if err != nil {
+			slog.Error("register check email", "error", err)
+			WriteOAuthError(w, "server_error", "internal error", http.StatusInternalServerError)
+			return
+		}
+		if existing != nil {
+			WriteOAuthError(w, "invalid_request", "email already registered", http.StatusConflict)
+			return
+		}
+	}
+	if req.Phone != "" {
+		existing, err = h.findUserByLogin(req.Phone)
+		if err != nil {
+			slog.Error("register check phone", "error", err)
+			WriteOAuthError(w, "server_error", "internal error", http.StatusInternalServerError)
+			return
+		}
+		if existing != nil {
+			WriteOAuthError(w, "invalid_request", "phone already registered", http.StatusConflict)
+			return
+		}
+	}
+
+	hash, err := hashPassword(req.Password)
+	if err != nil {
+		slog.Error("hash password", "error", err)
+		WriteOAuthError(w, "server_error", "internal error", http.StatusInternalServerError)
+		return
+	}
+	nickname := req.Nickname
+	if nickname == "" {
+		nickname = req.Username
+	}
+	user := model.User{
+		Username:     req.Username,
+		Email:        req.Email,
+		PasswordHash: hash,
+		Phone:        req.Phone,
+		Nickname:     nickname,
+		CreatedAt:    time.Now().Format(time.RFC3339),
+	}
+	data, mErr := json.Marshal(user)
+	if mErr != nil {
+		slog.Error("marshal user", "error", mErr)
+		WriteOAuthError(w, "server_error", "internal error", http.StatusInternalServerError)
+		return
+	}
+	id, cErr := h.store.Create("auth/users", data)
+	if cErr != nil {
+		slog.Error("create user", "error", cErr)
+		WriteOAuthError(w, "server_error", "internal error", http.StatusInternalServerError)
+		return
+	}
+	user.ID = id
+
+	// 注册成功即签发令牌（与验证码登录体验一致）
+	tgr := &oauth2.TokenGenerateRequest{
+		ClientID: "qtcloud-auth",
+		UserID:   user.ID,
+	}
+	ti, tErr := h.oauthMgr.GenerateAccessToken(r.Context(), oauth2.PasswordCredentials, tgr)
+	if tErr != nil {
+		slog.Error("generate access token", "error", tErr)
+		WriteOAuthError(w, "server_error", "failed to generate token", http.StatusInternalServerError)
+		return
+	}
 	WriteJSON(w, h.oauthSrv.GetTokenData(ti), http.StatusOK)
 }
 

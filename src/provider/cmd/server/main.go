@@ -39,6 +39,13 @@ func main() {
 	switch smsDriver {
 	case "console":
 		sender = &api.ConsoleSender{}
+	case "aliyun":
+		as, err := api.NewAliyunSMSSender()
+		if err != nil {
+			slog.Error("init aliyun sms sender", "error", err)
+			os.Exit(1)
+		}
+		sender = as
 	default:
 		slog.Error("unknown sms driver", "driver", smsDriver)
 		os.Exit(1)
@@ -60,6 +67,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /oauth/token", handler.Token)
 	mux.HandleFunc("POST /oauth/sms/send", handler.SendCode)
+	mux.HandleFunc("POST /oauth/register", handler.Register)
 	mux.HandleFunc("GET /userinfo", handler.AuthMiddleware(http.HandlerFunc(handler.UserInfo)).ServeHTTP)
 
 	// ── 启动 ──
