@@ -9,7 +9,6 @@ import (
 	"github.com/go-oauth2/oauth2/v4/server"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/quanttide/qtcloud-auth/internal/model"
-	"golang.org/x/crypto/bcrypt"
 )
 
 // Storer 持久化抽象.
@@ -43,15 +42,6 @@ func NewAuthHandler(st Storer, secret string, sender SMSSender, tokenStore ...oa
 		h.oauthTokenStore = tokenStore[0]
 	}
 	return h
-}
-
-// hashPassword bcrypt 密码哈希.
-func hashPassword(password string) (string, error) {
-	b, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-	if err != nil {
-		return "", err
-	}
-	return string(b), nil
 }
 
 // ── 用户查找 ──

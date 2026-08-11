@@ -24,7 +24,7 @@
 - **授权方式**：`password`（用户名+密码）、`sms_code`（手机验证码）、`refresh_token`
 - **access_token**：JWT（HS256，`generates.NewJWTAccessGenerate`），claims 为 `sub`（用户 UUID）、`aud`（客户端）、`exp`；**无状态验签**（/userinfo 只验签不查库）
 - **refresh_token**：不透明随机串，存 `oauth_tokens` 表（GORM `oauth2.TokenStore`，见 `internal/store/token_store.go`）；**刷新即轮换**，旧 token 作废
-- **密码校验**：bcrypt（`PasswordAuthorizationHandler`）
+- **密码校验**：Argon2id（PHC 格式，OWASP 首选；`PasswordAuthorizationHandler`）
 
 ### 令牌校验（`internal/api/handler.go`）
 
@@ -38,7 +38,7 @@
 
 ### 管理员（`cmd/server/main.go`）
 
-- `EnsureAdmin`：启动时若无 `admin` 则用 `ADMIN_PASSWORD` 创建（bcrypt 哈希）
+- `EnsureAdmin`：启动时若无 `admin` 则用 `ADMIN_PASSWORD` 创建（Argon2id 哈希）
 - **已知**：admin 已存在时不会更新密码；轮换需删库重建（见 iac.md）
 
 ### 密钥（环境变量）
@@ -54,7 +54,7 @@
 | 风险 | 等级 | 现状 | 缓解/规划 |
 |------|------|------|-----------|
 | FC 入口无网关层鉴权（anonymous） | 中 | 任何人可调用函数端点 | 系统级 API 网关接入（鉴权/限流/WAF） |
-| `/oauth/token` 无限流防刷 | 中 | 可暴力尝试（bcrypt 校验有成本，但无 IP 级限流） | 网关限流 / ROADMAP P3.1 频率限制 |
+| `/oauth/token` 无限流防刷 | 中 | 可暴力尝试（Argon2id 校验有成本，但无 IP 级限流） | 网关限流 / ROADMAP P3.1 频率限制 |
 | JWT 为 HS256 单密钥 | 低 | 密钥已强化；无算法协商风险 | ROADMAP P3.2 RS256 非对称 |
 | refresh_token 存储于 DB | 低 | 轮换 + 过期摘除 | — |
 | 验证码仅 console 发送器 | 低 | 生产不真实下发 | Phase 2：阿里云 SMS |

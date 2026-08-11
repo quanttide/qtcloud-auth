@@ -19,7 +19,6 @@ import (
 	"github.com/quanttide/qtcloud-auth/internal/app"
 	"github.com/quanttide/qtcloud-auth/internal/model"
 	qtstore "github.com/quanttide/qtcloud-auth/internal/store"
-	"golang.org/x/crypto/bcrypt"
 )
 
 // ── Mocks ──
@@ -243,17 +242,20 @@ func TestHashPassword(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// 同一个密码每次 bcrypt 输出不同（自动加盐）
+	// 同一个密码每次 Argon2id 输出不同（自动加盐）
 	h2, _ := hashPassword("secret")
 	if h1 == h2 {
-		t.Error("bcrypt must produce different hashes due to random salt")
+		t.Error("argon2id must produce different hashes due to random salt")
 	}
 	// 但都能正确验证
-	if err := bcrypt.CompareHashAndPassword([]byte(h1), []byte("secret")); err != nil {
+	if !verifyPassword("secret", h1) {
 		t.Error("valid password should match")
 	}
-	if err := bcrypt.CompareHashAndPassword([]byte(h1), []byte("wrong")); err == nil {
+	if verifyPassword("wrong", h1) {
 		t.Error("wrong password should not match")
+	}
+	if !strings.HasPrefix(h1, "$argon2id$") {
+		t.Errorf("hash should be PHC argon2id format, got %q", h1)
 	}
 }
 
@@ -494,7 +496,7 @@ func TestEnsureAdmin_Creates(t *testing.T) {
 	if u == nil {
 		t.Fatal("admin user not found")
 	}
-	if err := bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte("admin123")); err != nil {
+	if !verifyPassword("admin123", u.PasswordHash) {
 		t.Errorf("password hash mismatch: %v", err)
 	}
 }
