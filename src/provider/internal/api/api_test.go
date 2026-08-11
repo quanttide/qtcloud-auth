@@ -91,6 +91,26 @@ func (m *mockStorer) Get(collection string, id string) ([]byte, error) {
 	return nil, fmt.Errorf("not found")
 }
 
+func (m *mockStorer) Delete(collection string, id string) error {
+	switch collection {
+	case "auth/verification_codes":
+		for i := range m.codes {
+			if m.codes[i].ID == id {
+				m.codes = append(m.codes[:i], m.codes[i+1:]...)
+				return nil
+			}
+		}
+	default:
+		for i := range m.users {
+			if m.users[i].ID == id {
+				m.users = append(m.users[:i], m.users[i+1:]...)
+				return nil
+			}
+		}
+	}
+	return fmt.Errorf("not found")
+}
+
 func (m *mockStorer) Update(collection string, id string, data []byte) error {
 	switch collection {
 	case "auth/verification_codes":
@@ -128,6 +148,8 @@ func (c *corruptStorer) Create(string, []byte) (string, error) { return "", nil 
 func (c *corruptStorer) Get(string, string) ([]byte, error) { return []byte(`not json`), nil }
 
 func (c *corruptStorer) Update(string, string, []byte) error { return nil }
+
+func (c *corruptStorer) Delete(string, string) error { return nil }
 
 // ── 辅助 ──
 
@@ -1438,5 +1460,55 @@ func TestFindUserByLogin(t *testing.T) {
 	u, _ := h.findUserByLogin("nobody")
 	if u != nil {
 		t.Errorf("expected nil for unknown login, got %+v", u)
+	}
+}
+
+// ── Admin：删除用户 ──
+
+func TestAdminDeleteUser(t *testing.T) {
+	h := newTestHandler()
+	admin := NewAdminHandler(h.store, "admin-tok")
+
+	// 注册一个用户
+	body := `{"username":"delme","password":"secret1"}`
+	r := httptest.NewRequest("POST", "/oauth/register", bytes.NewReader([]byte(body)))
+	h.Register(httptest.NewRecorder(), r)
+
+	// 无 token → 403
+	w := httptest.NewRecorder()
+	admin.handleDeleteUser(w, httptest.NewRequest("DELETE", "/admin/users/delme", nil))
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("no token: %d, want 403", w.Code)
+	}
+
+	// 错误 token → 403
+	w = httptest.NewRecorder()
+	req := httptest.NewRequest("DELETE", "/admin/users/delme", nil)
+	req.Header.Set("X-Admin-Token", "wrong")
+	admin.handleDeleteUser(w, req)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("bad token: %d, want 403", w.Code)
+	}
+
+	// 正确 token → 204，用户消失
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest("DELETE", "/admin/users/delme", nil)
+	req.Header.Set("X-Admin-Token", "admin-tok")
+	admin.handleDeleteUser(w, req)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("delete: %d, want 204 (%s)", w.Code, w.Body.String())
+	}
+	u, _ := h.findUserByLogin("delme")
+	if u != nil {
+		t.Error("user should be deleted")
+	}
+
+	// 再删 → 404
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest("DELETE", "/admin/users/delme", nil)
+	req.Header.Set("X-Admin-Token", "admin-tok")
+	admin.handleDeleteUser(w, req)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("re-delete: %d, want 404", w.Code)
 	}
 }

@@ -17,6 +17,7 @@ type Storer interface {
 	Create(collection string, data []byte) (string, error)
 	Get(collection string, id string) ([]byte, error)
 	Update(collection string, id string, data []byte) error
+	Delete(collection string, id string) error
 }
 
 // AuthHandler OAuth 2.0 认证处理器.
@@ -80,9 +81,9 @@ func (h *AuthHandler) findUserByPhone(phone string) (*model.User, error) {
 	return nil, nil
 }
 
-// findUserByLogin 按 用户名/邮箱/手机号 任一方式查找（密码登录统一入口）。
-func (h *AuthHandler) findUserByLogin(login string) (*model.User, error) {
-	data, err := h.store.List("auth/users")
+// findUserByLoginIn 按 用户名/邮箱/手机号 任一方式查找（密码登录统一入口）。
+func findUserByLoginIn(st Storer, login string) (*model.User, error) {
+	data, err := st.List("auth/users")
 	if err != nil {
 		return nil, err
 	}
@@ -96,6 +97,10 @@ func (h *AuthHandler) findUserByLogin(login string) (*model.User, error) {
 		}
 	}
 	return nil, nil
+}
+
+func (h *AuthHandler) findUserByLogin(login string) (*model.User, error) {
+	return findUserByLoginIn(h.store, login)
 }
 
 // ── JWT 令牌验证（供中间件和 UserInfo 使用） ──

@@ -158,3 +158,17 @@ func (s *Store) Update(collection string, id string, data []byte) error {
 		return fmt.Errorf("store: unknown collection %q", collection)
 	}
 }
+
+// Delete 按 ID 删除一条记录。
+func (s *Store) Delete(collection string, id string) error {
+	switch collection {
+	case ColUsers:
+		return s.db.Delete(&model.User{}, "id = ?", id).Error
+	case ColRoles:
+		return s.db.Delete(&model.Role{}, "id = ?", id).Error
+	case ColCodes:
+		return s.db.Delete(&model.VerificationCode{}, "id = ?", id).Error
+	default:
+		return fmt.Errorf("store: unknown collection %q", collection)
+	}
+}
