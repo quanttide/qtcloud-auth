@@ -58,6 +58,7 @@ resource "alicloud_fcv3_function" "this" {
     JWT_SECRET     = var.jwt_secret
     ADMIN_PASSWORD = var.admin_password
     SMS_DRIVER     = var.sms_driver
+    ADMIN_TOKEN    = var.admin_token
   }
 
   tags = {
