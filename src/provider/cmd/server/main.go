@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/base64"
 	"log/slog"
 	"net/http"
 	"os"
@@ -51,13 +52,18 @@ func main() {
 		os.Exit(1)
 	}
 
-	// ── 认证处理器（RS256：JWT_PRIVATE_KEY 为 RSA 私钥 PEM） ──
-	keyPEM := os.Getenv("JWT_PRIVATE_KEY")
-	if keyPEM == "" {
-		slog.Error("JWT_PRIVATE_KEY 未配置（RS256 私钥）")
+	// ── 认证处理器（RS256：JWT_PRIVATE_KEY 为 base64(PEM) 单行——GitHub Actions env 不支持多行值） ──
+	keyB64 := os.Getenv("JWT_PRIVATE_KEY")
+	if keyB64 == "" {
+		slog.Error("JWT_PRIVATE_KEY 未配置（base64(PEM) RSA 私钥）")
 		os.Exit(1)
 	}
-	handler, err := api.NewAuthHandler(st, keyPEM, sender, tokenStore)
+	keyPEM, err := base64.StdEncoding.DecodeString(keyB64)
+	if err != nil {
+		slog.Error("JWT_PRIVATE_KEY base64 解码失败", "error", err)
+		os.Exit(1)
+	}
+	handler, err := api.NewAuthHandler(st, string(keyPEM), sender, tokenStore)
 	if err != nil {
 		slog.Error("init auth handler", "error", err)
 		os.Exit(1)
