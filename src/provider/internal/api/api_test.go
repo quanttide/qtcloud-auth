@@ -3,7 +3,11 @@ package api
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -161,8 +165,26 @@ func lastCode(st *mockStorer) string {
 	return st.codes[len(st.codes)-1].Code
 }
 
-func newTestHandler() *AuthHandler {
-	h := NewAuthHandler(&mockStorer{}, "test-secret", &mockSMSSender{})
+// testKeyPEM 生成测试用 RSA 私钥 PEM（RS256）。
+func testKeyPEM(t *testing.T) string {
+	t.Helper()
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	der, err := x509.MarshalPKCS8PrivateKey(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der}))
+}
+
+func newTestHandler(t *testing.T) *AuthHandler {
+	t.Helper()
+	h, err := NewAuthHandler(&mockStorer{}, testKeyPEM(t), &mockSMSSender{})
+	if err != nil {
+		t.Fatal(err)
+	}
 	h.SetupOAuth()
 	return h
 }
@@ -355,19 +377,26 @@ func TestWriteOAuthError(t *testing.T) {
 
 func TestNewAuthHandler(t *testing.T) {
 	st := &mockStorer{}
-	h := NewAuthHandler(st, "mysecret", &mockSMSSender{})
+	h, err := NewAuthHandler(st, testKeyPEM(t), &mockSMSSender{})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if h == nil {
 		t.Fatal("NewAuthHandler returned nil")
 	}
-	if string(h.secret) != "mysecret" {
-		t.Errorf("secret = %q, want mysecret", string(h.secret))
+	if h.key == nil {
+		t.Error("RSA key should be parsed")
+	}
+	// 非法 PEM 应报错
+	if _, err := NewAuthHandler(st, "not-a-key", &mockSMSSender{}); err == nil {
+		t.Error("invalid PEM should error")
 	}
 }
 
 // ── parseToken ──
 
 func TestParseToken_Valid(t *testing.T) {
-	h := newTestHandler()
+	h := newTestHandler(t)
 	token := loginGetToken(t, h)
 
 	claims, err := h.parseToken(token)
@@ -380,7 +409,7 @@ func TestParseToken_Valid(t *testing.T) {
 }
 
 func TestParseToken_Invalid(t *testing.T) {
-	h := newTestHandler()
+	h := newTestHandler(t)
 
 	_, err := h.parseToken("invalid.token.here")
 	if err == nil {
@@ -394,7 +423,7 @@ func TestParseToken_Invalid(t *testing.T) {
 }
 
 func TestParseToken_WrongAlg(t *testing.T) {
-	h := newTestHandler()
+	h := newTestHandler(t)
 	_, err := h.parseToken("eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.payload.sig")
 	if err == nil {
 		t.Error("expected error for wrong algorithm")
@@ -402,7 +431,7 @@ func TestParseToken_WrongAlg(t *testing.T) {
 }
 
 func TestParseToken_NoClaims(t *testing.T) {
-	h := newTestHandler()
+	h := newTestHandler(t)
 	_, err := h.parseToken("eyJhbGciOiJIUzI1NiJ9.A.p")
 	if err == nil {
 		t.Error("expected error for malformed token")
@@ -415,7 +444,10 @@ func TestFindUserByUsername(t *testing.T) {
 	st := &mockStorer{users: []model.User{
 		{ID: "u1", Username: "alice", PasswordHash: "hash1"},
 	}}
-	h := NewAuthHandler(st, "secret", &mockSMSSender{})
+	h, err := NewAuthHandler(st, testKeyPEM(t), &mockSMSSender{})
+	if err != nil {
+		t.Fatal(err)
+	}
 	h.SetupOAuth()
 
 	u, err := h.findUserByUsername("alice")
@@ -437,22 +469,28 @@ func TestFindUserByUsername(t *testing.T) {
 
 func TestFindUserByUsername_StoreError(t *testing.T) {
 	st := &mockStorer{listErr: fmt.Errorf("store down")}
-	h := NewAuthHandler(st, "secret", &mockSMSSender{})
+	h, err := NewAuthHandler(st, testKeyPEM(t), &mockSMSSender{})
+	if err != nil {
+		t.Fatal(err)
+	}
 	h.SetupOAuth()
 
-	_, err := h.findUserByUsername("alice")
+	_, err = h.findUserByUsername("alice")
 	if err == nil {
 		t.Error("expected error from store")
 	}
 }
 
 func TestFindUserByUsername_BadJSON(t *testing.T) {
-	h := NewAuthHandler(&mockStorer{}, "secret", &mockSMSSender{})
+	h, err := NewAuthHandler(&mockStorer{}, testKeyPEM(t), &mockSMSSender{})
+	if err != nil {
+		t.Fatal(err)
+	}
 	h.SetupOAuth()
 
 	// 用 corruptStorer 的 List 返回坏 json
 	h.store = &corruptStorer{}
-	_, err := h.findUserByUsername("alice")
+	_, err = h.findUserByUsername("alice")
 	if err == nil {
 		t.Error("expected Unmarshal error")
 	}
@@ -462,7 +500,10 @@ func TestFindUserByPhone(t *testing.T) {
 	st := &mockStorer{users: []model.User{
 		{ID: "u1", Phone: "13800138000"},
 	}}
-	h := NewAuthHandler(st, "secret", &mockSMSSender{})
+	h, err := NewAuthHandler(st, testKeyPEM(t), &mockSMSSender{})
+	if err != nil {
+		t.Fatal(err)
+	}
 	h.SetupOAuth()
 
 	u, err := h.findUserByPhone("13800138000")
@@ -484,21 +525,27 @@ func TestFindUserByPhone(t *testing.T) {
 
 func TestFindUserByPhone_StoreError(t *testing.T) {
 	st := &mockStorer{listErr: fmt.Errorf("store down")}
-	h := NewAuthHandler(st, "secret", &mockSMSSender{})
+	h, err := NewAuthHandler(st, testKeyPEM(t), &mockSMSSender{})
+	if err != nil {
+		t.Fatal(err)
+	}
 	h.SetupOAuth()
 
-	_, err := h.findUserByPhone("13800138000")
+	_, err = h.findUserByPhone("13800138000")
 	if err == nil {
 		t.Error("expected error from store")
 	}
 }
 
 func TestFindUserByPhone_BadJSON(t *testing.T) {
-	h := NewAuthHandler(&mockStorer{}, "secret", &mockSMSSender{})
+	h, err := NewAuthHandler(&mockStorer{}, testKeyPEM(t), &mockSMSSender{})
+	if err != nil {
+		t.Fatal(err)
+	}
 	h.SetupOAuth()
 	h.store = &corruptStorer{}
 
-	_, err := h.findUserByPhone("13800138000")
+	_, err = h.findUserByPhone("13800138000")
 	if err == nil {
 		t.Error("expected Unmarshal error")
 	}
@@ -507,7 +554,7 @@ func TestFindUserByPhone_BadJSON(t *testing.T) {
 // ── EnsureAdmin ──
 
 func TestEnsureAdmin_Creates(t *testing.T) {
-	h := newTestHandler()
+	h := newTestHandler(t)
 
 	err := h.EnsureAdmin("admin123")
 	if err != nil {
@@ -524,7 +571,7 @@ func TestEnsureAdmin_Creates(t *testing.T) {
 }
 
 func TestEnsureAdmin_Idempotent(t *testing.T) {
-	h := newTestHandler()
+	h := newTestHandler(t)
 
 	if err := h.EnsureAdmin("pw"); err != nil {
 		t.Fatalf("first EnsureAdmin: %v", err)
@@ -541,10 +588,13 @@ func TestEnsureAdmin_Idempotent(t *testing.T) {
 
 func TestEnsureAdmin_CreateError(t *testing.T) {
 	st := &mockStorer{createErr: fmt.Errorf("disk full")}
-	h := NewAuthHandler(st, "secret", &mockSMSSender{})
+	h, err := NewAuthHandler(st, testKeyPEM(t), &mockSMSSender{})
+	if err != nil {
+		t.Fatal(err)
+	}
 	h.SetupOAuth()
 
-	err := h.EnsureAdmin("pw")
+	err = h.EnsureAdmin("pw")
 	if err == nil {
 		t.Error("expected error from store.Create")
 	}
@@ -552,10 +602,13 @@ func TestEnsureAdmin_CreateError(t *testing.T) {
 
 func TestEnsureAdmin_UpdateError(t *testing.T) {
 	st := &mockStorer{updateErr: fmt.Errorf("disk full")}
-	h := NewAuthHandler(st, "secret", &mockSMSSender{})
+	h, err := NewAuthHandler(st, testKeyPEM(t), &mockSMSSender{})
+	if err != nil {
+		t.Fatal(err)
+	}
 	h.SetupOAuth()
 
-	err := h.EnsureAdmin("pw")
+	err = h.EnsureAdmin("pw")
 	if err == nil {
 		t.Error("expected error from store.Update")
 	}
@@ -563,10 +616,13 @@ func TestEnsureAdmin_UpdateError(t *testing.T) {
 
 func TestEnsureAdmin_ListError(t *testing.T) {
 	st := &mockStorer{listErr: fmt.Errorf("store down")}
-	h := NewAuthHandler(st, "secret", &mockSMSSender{})
+	h, err := NewAuthHandler(st, testKeyPEM(t), &mockSMSSender{})
+	if err != nil {
+		t.Fatal(err)
+	}
 	h.SetupOAuth()
 
-	err := h.EnsureAdmin("pw")
+	err = h.EnsureAdmin("pw")
 	if err == nil {
 		t.Error("expected error from store.List")
 	}
@@ -575,7 +631,7 @@ func TestEnsureAdmin_ListError(t *testing.T) {
 // ── SendCode ──
 
 func TestSendCode_Success(t *testing.T) {
-	h := newTestHandler()
+	h := newTestHandler(t)
 	body := `{"phone":"13800138000"}`
 	r := httptest.NewRequest("POST", "/oauth/sms/send", bytes.NewReader([]byte(body)))
 	r.Header.Set("Content-Type", "application/json")
@@ -594,7 +650,7 @@ func TestSendCode_Success(t *testing.T) {
 }
 
 func TestSendCode_InvalidPhone(t *testing.T) {
-	h := newTestHandler()
+	h := newTestHandler(t)
 	tests := []string{
 		`{"phone":"12345"}`,
 		`{"phone":""}`,
@@ -613,7 +669,7 @@ func TestSendCode_InvalidPhone(t *testing.T) {
 }
 
 func TestSendCode_RateLimit(t *testing.T) {
-	h := newTestHandler()
+	h := newTestHandler(t)
 
 	body := `{"phone":"13800138000"}`
 	r1 := httptest.NewRequest("POST", "/oauth/sms/send", bytes.NewReader([]byte(body)))
@@ -634,7 +690,10 @@ func TestSendCode_RateLimit(t *testing.T) {
 }
 
 func TestSendCode_SMSSenderError(t *testing.T) {
-	h := NewAuthHandler(&mockStorer{}, "secret", &mockSMSSender{err: fmt.Errorf("sms down")})
+	h, err := NewAuthHandler(&mockStorer{}, testKeyPEM(t), &mockSMSSender{err: fmt.Errorf("sms down")})
+	if err != nil {
+		t.Fatal(err)
+	}
 	h.SetupOAuth()
 
 	body := `{"phone":"13800138000"}`
@@ -651,7 +710,7 @@ func TestSendCode_SMSSenderError(t *testing.T) {
 // ── OAuth Token ──
 
 func TestToken_UnsupportedGrantType(t *testing.T) {
-	h := newTestHandler()
+	h := newTestHandler(t)
 	form := url.Values{"grant_type": {"client_credentials"}}
 	r := httptest.NewRequest("POST", "/oauth/token", strings.NewReader(form.Encode()))
 	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -669,7 +728,7 @@ func TestToken_UnsupportedGrantType(t *testing.T) {
 }
 
 func TestToken_Password_Success(t *testing.T) {
-	h := newTestHandler()
+	h := newTestHandler(t)
 	_ = h.EnsureAdmin("admin")
 
 	form := url.Values{"grant_type": {"password"}, "username": {"admin"}, "password": {"admin"}}
@@ -703,7 +762,7 @@ func TestToken_Password_Success(t *testing.T) {
 }
 
 func TestToken_Password_WrongCreds(t *testing.T) {
-	h := newTestHandler()
+	h := newTestHandler(t)
 	_ = h.EnsureAdmin("admin")
 
 	form := url.Values{"grant_type": {"password"}, "username": {"admin"}, "password": {"wrong"}}
@@ -720,7 +779,10 @@ func TestToken_Password_WrongCreds(t *testing.T) {
 // 密码授权时 store.List 失败 → PasswordAuthorizationHandler 返回 error
 func TestToken_Password_StoreError(t *testing.T) {
 	st := &mockStorer{listErr: fmt.Errorf("down")}
-	h := NewAuthHandler(st, "secret", &mockSMSSender{})
+	h, err := NewAuthHandler(st, testKeyPEM(t), &mockSMSSender{})
+	if err != nil {
+		t.Fatal(err)
+	}
 	h.SetupOAuth()
 
 	form := url.Values{"grant_type": {"password"}, "username": {"admin"}, "password": {"x"}}
@@ -737,7 +799,7 @@ func TestToken_Password_StoreError(t *testing.T) {
 }
 
 func TestToken_Refresh_Success(t *testing.T) {
-	h := newTestHandler()
+	h := newTestHandler(t)
 	rt := getRefreshToken(t, h)
 
 	form2 := url.Values{"grant_type": {"refresh_token"}, "refresh_token": {rt}}
@@ -768,7 +830,10 @@ func TestToken_Refresh_WithSharedStore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	h := NewAuthHandler(&mockStorer{}, "test-secret", &mockSMSSender{}, tokenStore)
+	h, err := NewAuthHandler(&mockStorer{}, testKeyPEM(t), &mockSMSSender{}, tokenStore)
+	if err != nil {
+		t.Fatal(err)
+	}
 	h.SetupOAuth()
 
 	rt := getRefreshToken(t, h)
@@ -795,7 +860,10 @@ func TestToken_Refresh_WithSharedStore(t *testing.T) {
 
 func TestToken_SMSCode_Success(t *testing.T) {
 	st := &mockStorer{}
-	h := NewAuthHandler(st, "test-secret", &mockSMSSender{})
+	h, err := NewAuthHandler(st, testKeyPEM(t), &mockSMSSender{})
+	if err != nil {
+		t.Fatal(err)
+	}
 	h.SetupOAuth()
 
 	body := `{"phone":"13800138000"}`
@@ -843,7 +911,7 @@ func TestToken_SMSCode_Success(t *testing.T) {
 }
 
 func TestToken_SMSCode_WrongCode(t *testing.T) {
-	h := newTestHandler()
+	h := newTestHandler(t)
 
 	form := url.Values{"grant_type": {"sms_code"}, "phone": {"13800138000"}, "code": {"000000"}}
 	r := httptest.NewRequest("POST", "/oauth/token", strings.NewReader(form.Encode()))
@@ -857,7 +925,7 @@ func TestToken_SMSCode_WrongCode(t *testing.T) {
 }
 
 func TestToken_SMSCode_InvalidPhone(t *testing.T) {
-	h := newTestHandler()
+	h := newTestHandler(t)
 	form := url.Values{"grant_type": {"sms_code"}, "phone": {"abc"}, "code": {"123456"}}
 	r := httptest.NewRequest("POST", "/oauth/token", strings.NewReader(form.Encode()))
 	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -870,7 +938,7 @@ func TestToken_SMSCode_InvalidPhone(t *testing.T) {
 }
 
 func TestToken_SMSCode_EmptyCode(t *testing.T) {
-	h := newTestHandler()
+	h := newTestHandler(t)
 	form := url.Values{"grant_type": {"sms_code"}, "phone": {"13800138000"}, "code": {""}}
 	r := httptest.NewRequest("POST", "/oauth/token", strings.NewReader(form.Encode()))
 	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -885,7 +953,10 @@ func TestToken_SMSCode_EmptyCode(t *testing.T) {
 // tokenSMS 错误路径：store.Create 失败
 func TestTokenSMS_CreateUserError(t *testing.T) {
 	st := &mockStorer{createErr: fmt.Errorf("disk full")}
-	h := NewAuthHandler(st, "secret", &mockSMSSender{})
+	h, err := NewAuthHandler(st, testKeyPEM(t), &mockSMSSender{})
+	if err != nil {
+		t.Fatal(err)
+	}
 	h.SetupOAuth()
 
 	body := `{"phone":"13800138000"}`
@@ -910,7 +981,10 @@ func TestTokenSMS_CreateUserError(t *testing.T) {
 // tokenSMS 错误路径：findUserByPhone 错误
 func TestTokenSMS_FindUserError(t *testing.T) {
 	st := &mockStorer{listErr: fmt.Errorf("store down")}
-	h := NewAuthHandler(st, "secret", &mockSMSSender{})
+	h, err := NewAuthHandler(st, testKeyPEM(t), &mockSMSSender{})
+	if err != nil {
+		t.Fatal(err)
+	}
 	h.SetupOAuth()
 
 	body := `{"phone":"13800138000"}`
@@ -940,7 +1014,10 @@ func TestTokenSMS_UpdatePhoneVerifiedError(t *testing.T) {
 		},
 		updateErr: fmt.Errorf("disk full"),
 	}
-	h := NewAuthHandler(st, "secret", &mockSMSSender{})
+	h, err := NewAuthHandler(st, testKeyPEM(t), &mockSMSSender{})
+	if err != nil {
+		t.Fatal(err)
+	}
 	h.SetupOAuth()
 
 	body := `{"phone":"13800138000"}`
@@ -966,7 +1043,10 @@ func TestTokenSMS_UpdatePhoneVerifiedError(t *testing.T) {
 // 重建一个不含 client store 的 manager 来触发
 func TestTokenSMS_GenerateTokenError(t *testing.T) {
 	st := &mockStorer{}
-	h := NewAuthHandler(st, "secret", &mockSMSSender{})
+	h, err := NewAuthHandler(st, testKeyPEM(t), &mockSMSSender{})
+	if err != nil {
+		t.Fatal(err)
+	}
 	// 用不含 client 的 manager 覆盖 oauthMgr
 	mgr := manage.NewDefaultManager()
 	ts, _ := store.NewMemoryTokenStore()
@@ -1031,7 +1111,7 @@ func (e *emptyManager) LoadRefreshToken(ctx context.Context, refresh string) (oa
 // ── UserInfo ──
 
 func TestUserInfo_Success(t *testing.T) {
-	h := newTestHandler()
+	h := newTestHandler(t)
 	token := loginGetToken(t, h)
 
 	r2 := httptest.NewRequest("GET", "/userinfo", nil)
@@ -1053,7 +1133,7 @@ func TestUserInfo_Success(t *testing.T) {
 }
 
 func TestUserInfo_NoToken(t *testing.T) {
-	h := newTestHandler()
+	h := newTestHandler(t)
 	r := httptest.NewRequest("GET", "/userinfo", nil)
 	w := httptest.NewRecorder()
 	h.UserInfo(w, r)
@@ -1064,7 +1144,7 @@ func TestUserInfo_NoToken(t *testing.T) {
 }
 
 func TestUserInfo_InvalidToken(t *testing.T) {
-	h := newTestHandler()
+	h := newTestHandler(t)
 	r := httptest.NewRequest("GET", "/userinfo", nil)
 	r.Header.Set("Authorization", "Bearer invalid.token.here")
 	w := httptest.NewRecorder()
@@ -1076,7 +1156,7 @@ func TestUserInfo_InvalidToken(t *testing.T) {
 }
 
 func TestUserInfo_UserNotFound(t *testing.T) {
-	h := newTestHandler()
+	h := newTestHandler(t)
 	token := loginGetToken(t, h)
 
 	h.store = &mockStorer{}
@@ -1093,7 +1173,7 @@ func TestUserInfo_UserNotFound(t *testing.T) {
 
 // UserInfo 错误路径：json.Unmarshal 失败
 func TestUserInfo_UnmarshalError(t *testing.T) {
-	h := newTestHandler()
+	h := newTestHandler(t)
 	token := loginGetToken(t, h)
 
 	h.store = &corruptStorer{}
@@ -1110,7 +1190,7 @@ func TestUserInfo_UnmarshalError(t *testing.T) {
 
 // UserInfo 错误路径：claims 中没有 sub
 func TestUserInfo_NoSubClaim(t *testing.T) {
-	h := newTestHandler()
+	h := newTestHandler(t)
 
 	// 构造一个没有 sub 的 claims 注入到 context
 	claims := jwtlib.MapClaims{"foo": "bar"}
@@ -1125,10 +1205,10 @@ func TestUserInfo_NoSubClaim(t *testing.T) {
 	// 所以这个测试方式不 work，需要改为传给 parseToken 一个无 sub 的 token
 
 	// 正确做法：用 golang-jwt 签一个没有 sub 的 token
-	noSubToken, _ := jwtlib.NewWithClaims(jwtlib.SigningMethodHS256, jwtlib.MapClaims{
+	noSubToken, _ := jwtlib.NewWithClaims(jwtlib.SigningMethodRS256, jwtlib.MapClaims{
 		"foo": "bar",
 		"exp": time.Now().Add(time.Hour).Unix(),
-	}).SignedString(h.secret)
+	}).SignedString(h.key)
 
 	r2 := httptest.NewRequest("GET", "/userinfo", nil)
 	r2.Header.Set("Authorization", "Bearer "+noSubToken)
@@ -1144,7 +1224,10 @@ func TestUserInfo_NoSubClaim(t *testing.T) {
 
 func TestFindValidCode(t *testing.T) {
 	st := &mockStorer{}
-	h := NewAuthHandler(st, "test-secret", &mockSMSSender{})
+	h, err := NewAuthHandler(st, testKeyPEM(t), &mockSMSSender{})
+	if err != nil {
+		t.Fatal(err)
+	}
 	vc := model.VerificationCode{
 		ID:        "c1",
 		Phone:     "13800138000",
@@ -1189,7 +1272,10 @@ func TestFindValidCode(t *testing.T) {
 // findValidCode 错误路径：不可解析的 ExpiresAt
 func TestFindValidCode_BadExpiresAt(t *testing.T) {
 	st := &mockStorer{}
-	h := NewAuthHandler(st, "test-secret", &mockSMSSender{})
+	h, err := NewAuthHandler(st, testKeyPEM(t), &mockSMSSender{})
+	if err != nil {
+		t.Fatal(err)
+	}
 	vc := model.VerificationCode{
 		ID:        "c1",
 		Phone:     "13800138000",
@@ -1208,7 +1294,7 @@ func TestFindValidCode_BadExpiresAt(t *testing.T) {
 // ── AuthMiddleware ──
 
 func TestAuthMiddleware_Valid(t *testing.T) {
-	h := newTestHandler()
+	h := newTestHandler(t)
 	token := loginGetToken(t, h)
 
 	called := false
@@ -1229,7 +1315,7 @@ func TestAuthMiddleware_Valid(t *testing.T) {
 }
 
 func TestAuthMiddleware_NoToken(t *testing.T) {
-	h := newTestHandler()
+	h := newTestHandler(t)
 	called := false
 	mw := h.AuthMiddleware(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		called = true
@@ -1247,7 +1333,7 @@ func TestAuthMiddleware_NoToken(t *testing.T) {
 }
 
 func TestAuthMiddleware_InvalidToken(t *testing.T) {
-	h := newTestHandler()
+	h := newTestHandler(t)
 	called := false
 	mw := h.AuthMiddleware(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		called = true
@@ -1281,7 +1367,10 @@ func TestTokenSMS_UpdatesPhoneVerified(t *testing.T) {
 	st := &mockStorer{users: []model.User{
 		{ID: "u1", Username: "13800138000", Phone: "13800138000", PasswordHash: "x"},
 	}}
-	h := NewAuthHandler(st, "secret", &mockSMSSender{})
+	h, err := NewAuthHandler(st, testKeyPEM(t), &mockSMSSender{})
+	if err != nil {
+		t.Fatal(err)
+	}
 	h.SetupOAuth()
 
 	body := `{"phone":"13800138000"}`
@@ -1311,14 +1400,14 @@ func TestTokenSMS_UpdatesPhoneVerified(t *testing.T) {
 // ── 边缘 case ──
 
 func TestMarkCodeUsed_NotFound(t *testing.T) {
-	h := newTestHandler()
+	h := newTestHandler(t)
 	h.markCodeUsed("13800138000", "000000") // should not panic
 }
 
 // ── Register（用户名/密码注册） ──
 
 func TestRegister_Success(t *testing.T) {
-	h := newTestHandler()
+	h := newTestHandler(t)
 	body := `{"username":"alice","password":"secret1","email":"alice@example.com","phone":"13900139001"}`
 	r := httptest.NewRequest("POST", "/oauth/register", bytes.NewReader([]byte(body)))
 	w := httptest.NewRecorder()
@@ -1347,7 +1436,7 @@ func TestRegister_Success(t *testing.T) {
 }
 
 func TestRegister_ThenPasswordLogin(t *testing.T) {
-	h := newTestHandler()
+	h := newTestHandler(t)
 	body := `{"username":"bob","password":"secret1","email":"bob@example.com"}`
 	r := httptest.NewRequest("POST", "/oauth/register", bytes.NewReader([]byte(body)))
 	w := httptest.NewRecorder()
@@ -1378,7 +1467,7 @@ func TestRegister_ThenPasswordLogin(t *testing.T) {
 }
 
 func TestRegister_DuplicateUsername(t *testing.T) {
-	h := newTestHandler()
+	h := newTestHandler(t)
 	body := `{"username":"carol","password":"secret1"}`
 	r := httptest.NewRequest("POST", "/oauth/register", bytes.NewReader([]byte(body)))
 	h.Register(httptest.NewRecorder(), r)
@@ -1393,7 +1482,7 @@ func TestRegister_DuplicateUsername(t *testing.T) {
 }
 
 func TestRegister_EmailConflict(t *testing.T) {
-	h := newTestHandler()
+	h := newTestHandler(t)
 	body := `{"username":"dave","email":"dup@example.com","password":"secret1"}`
 	h.Register(httptest.NewRecorder(), httptest.NewRequest("POST", "/oauth/register", bytes.NewReader([]byte(body))))
 
@@ -1406,7 +1495,7 @@ func TestRegister_EmailConflict(t *testing.T) {
 }
 
 func TestRegister_PhoneConflict(t *testing.T) {
-	h := newTestHandler()
+	h := newTestHandler(t)
 	body := `{"username":"frank","phone":"13900139002","password":"secret1"}`
 	h.Register(httptest.NewRecorder(), httptest.NewRequest("POST", "/oauth/register", bytes.NewReader([]byte(body))))
 
@@ -1432,7 +1521,7 @@ func TestRegister_Validation(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			h := newTestHandler()
+			h := newTestHandler(t)
 			w := httptest.NewRecorder()
 			h.Register(w, httptest.NewRequest("POST", "/oauth/register", bytes.NewReader([]byte(tc.body))))
 			if w.Code != http.StatusBadRequest {
@@ -1443,7 +1532,7 @@ func TestRegister_Validation(t *testing.T) {
 }
 
 func TestFindUserByLogin(t *testing.T) {
-	h := newTestHandler()
+	h := newTestHandler(t)
 	body := `{"username":"ken","password":"secret1","email":"ken@example.com","phone":"13900139003"}`
 	h.Register(httptest.NewRecorder(), httptest.NewRequest("POST", "/oauth/register", bytes.NewReader([]byte(body))))
 
@@ -1466,7 +1555,7 @@ func TestFindUserByLogin(t *testing.T) {
 // ── Admin：删除用户 ──
 
 func TestAdminDeleteUser(t *testing.T) {
-	h := newTestHandler()
+	h := newTestHandler(t)
 	admin := NewAdminHandler(h.store, "admin-tok")
 
 	// 注册一个用户

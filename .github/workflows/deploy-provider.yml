@@ -8,7 +8,7 @@
 #   - ALIYUN_ACCESS_KEY_ID / ALIYUN_ACCESS_KEY_SECRET：RAM 用户 AccessKey（terraform 用，PowerUserAccess）
 #   - ALIYUN_ACR_USERNAME / ALIYUN_ACR_PASSWORD / ALIYUN_ACR_REGISTRY：ACR 固定凭证（docker login；REGISTRY 为本实例公网地址 crpi-xxx.personal.cr.aliyuncs.com）
 #   - DB_PASSWORD：RDS 数据库密码（注入 TF_VAR_db_password）
-#   - JWT_SECRET：JWT HS256 签名密钥（注入 TF_VAR_jwt_secret）
+#   - JWT_PRIVATE_KEY：JWT RS256 签名私钥 PEM（注入 TF_VAR_jwt_private_key）
 #   - ADMIN_PASSWORD：种子管理员密码（注入 TF_VAR_admin_password）
 #   - DOCKERHUB_USERNAME / DOCKERHUB_PASSWORD：Docker Hub 凭证（双通道之一）
 #
@@ -105,7 +105,7 @@ jobs:
       ALICLOUD_ACCESS_KEY_SECRET: ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}
       ALICLOUD_REGION_ID: cn-hangzhou
       TF_VAR_db_password: ${{ secrets.DB_PASSWORD }}
-      TF_VAR_jwt_secret: ${{ secrets.JWT_SECRET }}
+      TF_VAR_jwt_private_key: ${{ secrets.JWT_PRIVATE_KEY }}
       TF_VAR_admin_password: ${{ secrets.ADMIN_PASSWORD }}
       TF_VAR_admin_token: ${{ secrets.ADMIN_TOKEN }}
 

@@ -39,8 +39,8 @@ variable "image" {
   type        = string
 }
 
-variable "jwt_secret" {
-  description = "JWT HS256 签名密钥（provider 环境变量 JWT_SECRET，生产必须显式配置，勿用默认值）"
+variable "jwt_private_key" {
+  description = "JWT RS256 签名私钥（RSA PEM）。由 CI 注入（TF_VAR_jwt_private_key = secret JWT_PRIVATE_KEY）"
   type        = string
   sensitive   = true
 }

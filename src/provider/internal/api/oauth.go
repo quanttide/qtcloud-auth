@@ -23,7 +23,7 @@ import (
 func (h *AuthHandler) SetupOAuth() *server.Server {
 	// Manager
 	mgr := manage.NewDefaultManager()
-	mgr.MapAccessGenerate(generates.NewJWTAccessGenerate("", h.secret, jwt.SigningMethodHS256))
+	mgr.MapAccessGenerate(generates.NewJWTAccessGenerate("", h.keyPEM, jwt.SigningMethodRS256))
 
 	ts, _ := store.NewMemoryTokenStore()
 	if h.oauthTokenStore != nil {

@@ -55,7 +55,7 @@ resource "alicloud_fcv3_function" "this" {
   environment_variables = {
     DB_DRIVER      = "postgres"
     DATABASE_URL   = "postgres://${alicloud_db_account.this.account_name}:${var.db_password}@${data.terraform_remote_state.platform.outputs.rds_connection_string}:${data.terraform_remote_state.platform.outputs.rds_port}/${alicloud_db_database.this.data_base_name}?sslmode=disable"
-    JWT_SECRET     = var.jwt_secret
+    JWT_PRIVATE_KEY = var.jwt_private_key
     ADMIN_PASSWORD = var.admin_password
     SMS_DRIVER     = var.sms_driver
     ADMIN_TOKEN    = var.admin_token

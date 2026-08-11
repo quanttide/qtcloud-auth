@@ -1,7 +1,11 @@
 package api
 
 import (
+	"crypto/rsa"
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -24,7 +28,8 @@ type Storer interface {
 // 验证码、令牌等数据统一走共享存储（FC 多实例可用），不保留实例本地状态。
 type AuthHandler struct {
 	store           Storer
-	secret          []byte // JWT 签名密钥
+	key             *rsa.PrivateKey // JWT RS256 签名私钥（签发）；验签用其公钥
+	keyPEM          []byte          // 原始 PEM（go-oauth2 签发用）
 	smsSender       SMSSender
 	oauthTokenStore oauth2.TokenStore // 可选：缺省用内存 TokenStore（单实例）
 	oauthMgr        oauth2.Manager
@@ -32,17 +37,33 @@ type AuthHandler struct {
 }
 
 // NewAuthHandler 创建认证处理器。
-// tokenStore 可选：传入则用于令牌/刷新令牌的共享存储，缺省为内存实现（测试、单实例）。
-func NewAuthHandler(st Storer, secret string, sender SMSSender, tokenStore ...oauth2.TokenStore) *AuthHandler {
+// key PEM 为 RSA 私钥（RS256 签发与验签）；tokenStore 可选（共享存储，缺省内存）。
+func NewAuthHandler(st Storer, keyPEM string, sender SMSSender, tokenStore ...oauth2.TokenStore) (*AuthHandler, error) {
+	block, _ := pem.Decode([]byte(keyPEM))
+	if block == nil {
+		return nil, fmt.Errorf("auth: invalid JWT private key PEM")
+	}
+	key, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+	if err != nil {
+		key, err = x509.ParsePKCS1PrivateKey(block.Bytes)
+		if err != nil {
+			return nil, fmt.Errorf("auth: parse JWT private key: %w", err)
+		}
+	}
+	rsaKey, ok := key.(*rsa.PrivateKey)
+	if !ok {
+		return nil, fmt.Errorf("auth: JWT key must be RSA")
+	}
 	h := &AuthHandler{
 		store:     st,
-		secret:    []byte(secret),
+		key:       rsaKey,
+		keyPEM:    []byte(keyPEM),
 		smsSender: sender,
 	}
 	if len(tokenStore) > 0 {
 		h.oauthTokenStore = tokenStore[0]
 	}
-	return h
+	return h, nil
 }
 
 // ── 用户查找 ──
@@ -105,13 +126,13 @@ func (h *AuthHandler) findUserByLogin(login string) (*model.User, error) {
 
 // ── JWT 令牌验证（供中间件和 UserInfo 使用） ──
 
-// parseToken 解析并验证 Bearer JWT.
+// parseToken 解析并验证 Bearer JWT（RS256，公钥验签）。
 func (h *AuthHandler) parseToken(tokenString string) (jwt.MapClaims, error) {
 	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (any, error) {
-		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+		if _, ok := token.Method.(*jwt.SigningMethodRSA); !ok {
 			return nil, jwt.ErrSignatureInvalid
 		}
-		return h.secret, nil
+		return &h.key.PublicKey, nil
 	})
 	if err != nil {
 		return nil, err

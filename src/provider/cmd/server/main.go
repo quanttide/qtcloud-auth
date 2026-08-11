@@ -51,9 +51,17 @@ func main() {
 		os.Exit(1)
 	}
 
-	// ── 认证处理器 ──
-	secret := getEnv("JWT_SECRET", "quanttide-auth-secret")
-	handler := api.NewAuthHandler(st, secret, sender, tokenStore)
+	// ── 认证处理器（RS256：JWT_PRIVATE_KEY 为 RSA 私钥 PEM） ──
+	keyPEM := os.Getenv("JWT_PRIVATE_KEY")
+	if keyPEM == "" {
+		slog.Error("JWT_PRIVATE_KEY 未配置（RS256 私钥）")
+		os.Exit(1)
+	}
+	handler, err := api.NewAuthHandler(st, keyPEM, sender, tokenStore)
+	if err != nil {
+		slog.Error("init auth handler", "error", err)
+		os.Exit(1)
+	}
 	handler.SetupOAuth()
 
 	// 种子管理员（密码从环境变量读取，默认 123456）
