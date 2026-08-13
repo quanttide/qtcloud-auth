@@ -23,6 +23,12 @@ import (
 func (h *AuthHandler) SetupOAuth() *server.Server {
 	// Manager
 	mgr := manage.NewDefaultManager()
+	// access_token 7 天（默认 2h 过短，用户频繁重登）；refresh_token 30 天
+	mgr.SetAuthorizeCodeTokenCfg(&manage.Config{
+		AccessTokenExp:  time.Hour * 24 * 7,
+		RefreshTokenExp: time.Hour * 24 * 30,
+		IsGenerateRefresh: true,
+	})
 	mgr.MapAccessGenerate(generates.NewJWTAccessGenerate("", h.keyPEM, jwt.SigningMethodRS256))
 
 	ts, _ := store.NewMemoryTokenStore()

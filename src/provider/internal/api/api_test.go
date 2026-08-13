@@ -1601,3 +1601,59 @@ func TestAdminDeleteUser(t *testing.T) {
 		t.Fatalf("re-delete: %d, want 404", w.Code)
 	}
 }
+
+// ── 修改密码 ──
+
+func TestChangePassword(t *testing.T) {
+	h := newTestHandler(t)
+	// 注册用户
+	body := `{"username":"pwuser","password":"oldpass1"}`
+	r := httptest.NewRequest("POST", "/oauth/register", bytes.NewReader([]byte(body)))
+	h.Register(httptest.NewRecorder(), r)
+
+	// 登录拿 token
+	token := ""
+	form := url.Values{"grant_type": {"password"}, "username": {"pwuser"}, "password": {"oldpass1"}}
+	r2 := httptest.NewRequest("POST", "/oauth/token", strings.NewReader(form.Encode()))
+	r2.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w2 := httptest.NewRecorder()
+	h.Token(w2, r2)
+	var resp struct{ AccessToken string `json:"access_token"` }
+	json.NewDecoder(w2.Body).Decode(&resp)
+	token = resp.AccessToken
+	if token == "" {
+		t.Fatal("no token")
+	}
+
+	// 改密码（带 token，模拟 AuthMiddleware 注入 claims）
+	ch := bytes.NewBufferString(`{"old_password":"oldpass1","new_password":"newpass1"}`)
+	req := httptest.NewRequest("POST", "/oauth/password/change", ch)
+	req.Header.Set("Authorization", "Bearer "+token)
+	claims, _ := h.parseToken(token)
+	ctx := context.WithValue(req.Context(), ClaimsKey, claims)
+	w3 := httptest.NewRecorder()
+	h.ChangePassword(w3, req.WithContext(ctx))
+	if w3.Code != http.StatusOK {
+		t.Fatalf("change: %d %s", w3.Code, w3.Body.String())
+	}
+
+	// 旧密码登录失败
+	form2 := url.Values{"grant_type": {"password"}, "username": {"pwuser"}, "password": {"oldpass1"}}
+	r3 := httptest.NewRequest("POST", "/oauth/token", strings.NewReader(form2.Encode()))
+	r3.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w4 := httptest.NewRecorder()
+	h.Token(w4, r3)
+	if w4.Code != http.StatusUnauthorized {
+		t.Fatalf("old password login: %d, want 401", w4.Code)
+	}
+
+	// 新密码登录成功
+	form3 := url.Values{"grant_type": {"password"}, "username": {"pwuser"}, "password": {"newpass1"}}
+	r4 := httptest.NewRequest("POST", "/oauth/token", strings.NewReader(form3.Encode()))
+	r4.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w5 := httptest.NewRecorder()
+	h.Token(w5, r4)
+	if w5.Code != http.StatusOK {
+		t.Fatalf("new password login: %d", w5.Code)
+	}
+}

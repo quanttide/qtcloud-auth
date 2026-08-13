@@ -83,6 +83,7 @@ func main() {
 	mux.HandleFunc("POST /oauth/sms/send", handler.SendCode)
 	mux.HandleFunc("POST /oauth/register", handler.Register)
 	mux.HandleFunc("GET /userinfo", handler.AuthMiddleware(http.HandlerFunc(handler.UserInfo)).ServeHTTP)
+	mux.HandleFunc("POST /oauth/password/change", handler.AuthMiddleware(http.HandlerFunc(handler.ChangePassword)).ServeHTTP)
 	// 运维端点（fail-closed：ADMIN_TOKEN 未配置或请求头不匹配一律 403）
 	api.NewAdminHandler(st, getEnv("ADMIN_TOKEN", "")).Register(mux)
 

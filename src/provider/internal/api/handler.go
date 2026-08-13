@@ -4,6 +4,7 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"encoding/pem"
 	"fmt"
 	"log/slog"
@@ -13,6 +14,7 @@ import (
 	"github.com/go-oauth2/oauth2/v4/server"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/quanttide/qtcloud-auth/internal/model"
+	"gorm.io/gorm"
 )
 
 // Storer 持久化抽象.
@@ -122,6 +124,22 @@ func findUserByLoginIn(st Storer, login string) (*model.User, error) {
 
 func (h *AuthHandler) findUserByLogin(login string) (*model.User, error) {
 	return findUserByLoginIn(h.store, login)
+}
+
+// findUserByID 按用户 ID 查询。
+func (h *AuthHandler) findUserByID(id string) (*model.User, error) {
+	data, err := h.store.Get("auth/users", id)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var u model.User
+	if err := json.Unmarshal(data, &u); err != nil {
+		return nil, err
+	}
+	return &u, nil
 }
 
 // ── JWT 令牌验证（供中间件和 UserInfo 使用） ──
