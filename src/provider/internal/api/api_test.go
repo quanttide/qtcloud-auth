@@ -1657,3 +1657,75 @@ func TestChangePassword(t *testing.T) {
 		t.Fatalf("new password login: %d", w5.Code)
 	}
 }
+
+// TestUpdateUserInfo PATCH /userinfo 昵称更新（成功 + 边界 + 未认证）。
+func TestUpdateUserInfo(t *testing.T) {
+	h := newTestHandler(t)
+	// 注册用户
+	body := `{"username":"profileuser","password":"secret1"}`
+	r := httptest.NewRequest("POST", "/oauth/register", bytes.NewReader([]byte(body)))
+	h.Register(httptest.NewRecorder(), r)
+
+	token := ""
+	form := url.Values{"grant_type": {"password"}, "username": {"profileuser"}, "password": {"secret1"}}
+	r2 := httptest.NewRequest("POST", "/oauth/token", strings.NewReader(form.Encode()))
+	r2.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w2 := httptest.NewRecorder()
+	h.Token(w2, r2)
+	var resp struct{ AccessToken string `json:"access_token"` }
+	json.NewDecoder(w2.Body).Decode(&resp)
+	token = resp.AccessToken
+	if token == "" {
+		t.Fatal("no token")
+	}
+	claims, _ := h.parseToken(token)
+	authed := func(req *http.Request) *http.Request {
+		req.Header.Set("Authorization", "Bearer "+token)
+		return req.WithContext(context.WithValue(req.Context(), ClaimsKey, claims))
+	}
+
+	// 成功：更新昵称
+	upd := httptest.NewRequest("PATCH", "/userinfo", bytes.NewBufferString(`{"nickname":"新昵称"}`))
+	w3 := httptest.NewRecorder()
+	h.UpdateUserInfo(w3, authed(upd))
+	if w3.Code != http.StatusOK {
+		t.Fatalf("update: %d %s", w3.Code, w3.Body.String())
+	}
+
+	// GET /userinfo 确认昵称已更新
+	infoReq := httptest.NewRequest("GET", "/userinfo", nil)
+	w4 := httptest.NewRecorder()
+	h.UserInfo(w4, authed(infoReq))
+	if w4.Code != http.StatusOK {
+		t.Fatalf("userinfo: %d", w4.Code)
+	}
+	var info map[string]any
+	json.NewDecoder(w4.Body).Decode(&info)
+	if info["nickname"] != "新昵称" {
+		t.Errorf("nickname = %v, want 新昵称", info["nickname"])
+	}
+
+	// 空昵称 → 400
+	empty := httptest.NewRequest("PATCH", "/userinfo", bytes.NewBufferString(`{"nickname":"  "}`))
+	w5 := httptest.NewRecorder()
+	h.UpdateUserInfo(w5, authed(empty))
+	if w5.Code != http.StatusBadRequest {
+		t.Errorf("empty nickname: %d, want 400", w5.Code)
+	}
+
+	// 超长昵称 → 400
+	long := httptest.NewRequest("PATCH", "/userinfo", bytes.NewBufferString(`{"nickname":"`+strings.Repeat("长", 65)+`"}`))
+	w6 := httptest.NewRecorder()
+	h.UpdateUserInfo(w6, authed(long))
+	if w6.Code != http.StatusBadRequest {
+		t.Errorf("long nickname: %d, want 400", w6.Code)
+	}
+
+	// 无 token → 401
+	noAuth := httptest.NewRequest("PATCH", "/userinfo", bytes.NewBufferString(`{"nickname":"x"}`))
+	w7 := httptest.NewRecorder()
+	h.UpdateUserInfo(w7, noAuth)
+	if w7.Code != http.StatusUnauthorized {
+		t.Errorf("no token: %d, want 401", w7.Code)
+	}
+}
