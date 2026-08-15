@@ -320,6 +320,8 @@ func (h *AuthHandler) UserInfo(w http.ResponseWriter, r *http.Request) {
 
 	WriteJSON(w, map[string]any{
 		"sub":            user.ID,
+		"username":       user.Username,
+		"email":          user.Email,
 		"phone":          user.Phone,
 		"phone_verified": user.PhoneVerified,
 		"nickname":       user.Nickname,
