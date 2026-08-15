@@ -1,7 +1,8 @@
 package api
 
-// 更新个人资料：PATCH /userinfo（JWT 鉴权，MVP 仅支持昵称更新）。
+// 更新个人资料：POST /userinfo（JWT 鉴权，MVP 仅支持昵称更新）。
 // 用户名/邮箱/手机号是登录凭证，改动涉及唯一性与登录标识，本期不允许。
+// 注：路由用 POST 而非 PATCH——传统版 API 网关不支持 PATCH 方法（网关实测报 unauthorized method）。
 
 import (
 	"encoding/json"
