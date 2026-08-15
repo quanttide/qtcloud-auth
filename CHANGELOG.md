@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.0-alpha.17 (2026-08-15)
+
+- 新增 `PATCH /userinfo`：更新当前用户昵称（账号中心编辑昵称所需；仅允许昵称字段，用户名/邮箱/手机号为登录凭证本期锁定）
+
 ## 0.1.0-alpha.8 (2026-08-04)
 
 - 安全加固：注入真实 `JWT_SECRET` / `ADMIN_PASSWORD`（替换默认值 quanttide-auth-secret / 123456）；部署后需删除旧 admin 记录并由实例冷启动重建（见 docs）
