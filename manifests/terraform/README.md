@@ -1,6 +1,6 @@
 # qtcloud-auth 部署选型（IaC）
 
-依据 qtcloud-auth 开发运维指南（[docs/dev-guide/index.md](../../docs/dev-guide/index.md)）与路线图（[ROADMAP.md](../../ROADMAP.md)），部署方案对齐 qtcloud-pay 已落地选型（阿里云 RDS Serverless + FC 容器镜像 + 统一 API 网关预留），作为 Terraform 基础设施代码的设计依据。
+依据 qtcloud-auth 开发运维指南（[docs/dev-guide/index.md](../../docs/dev-guide/index.md)）与路线图（[ROADMAP.md](../../docs/dev-guide/roadmap.md)），部署方案对齐 qtcloud-pay 已落地选型（阿里云 RDS Serverless + FC 容器镜像 + 统一 API 网关预留），作为 Terraform 基础设施代码的设计依据。
 
 ## 部署选型
 
