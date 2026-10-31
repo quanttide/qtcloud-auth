@@ -326,6 +326,7 @@ func (h *AuthHandler) UserInfo(w http.ResponseWriter, r *http.Request) {
 		"phone_verified": user.PhoneVerified,
 		"nickname":       user.Nickname,
 		"picture":        user.Avatar,
+		"role":           user.RoleID, // 角色 ID（空=普通用户；admin=管理员），客户端据此展示/隐藏入口
 		"updated_at":     user.CreatedAt,
 	}, http.StatusOK)
 }

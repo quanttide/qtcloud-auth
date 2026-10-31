@@ -21,6 +21,26 @@ func UserIDFrom(r *http.Request) string {
 	return ""
 }
 
+// WithCORS 跨域支持（浏览器 Web 客户端，如账号中心 Flutter Web）：
+// 回显 Origin，允许 Authorization / X-Admin-Token 头，OPTIONS 预检直接 204。
+// 注：鉴权仍靠 JWT/Token 本身，CORS 只是浏览器同源策略的配套，不是安全边界。
+func WithCORS(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if origin := r.Header.Get("Origin"); origin != "" {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Vary", "Origin")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Admin-Token")
+			w.Header().Set("Access-Control-Max-Age", "600")
+		}
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 // AuthMiddleware 解析 Bearer JWT 并注入 claims 到请求上下文.
 func (h *AuthHandler) AuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

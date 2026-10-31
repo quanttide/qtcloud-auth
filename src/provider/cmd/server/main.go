@@ -91,7 +91,7 @@ func main() {
 	// ── 启动 ──
 	addr := getEnv("LISTEN_ADDR", ":8080")
 	slog.Info("starting server", "addr", addr)
-	if err := http.ListenAndServe(addr, mux); err != nil {
+	if err := http.ListenAndServe(addr, api.WithCORS(mux)); err != nil {
 		slog.Error("server error", "error", err)
 		os.Exit(1)
 	}
