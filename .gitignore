@@ -1,3 +1,8 @@
 __pycache__/
 *.pyc
 .DS_Store
+
+# Flutter（src/studio）
+*.iml
+.dart_tool/
+src/studio/build/
