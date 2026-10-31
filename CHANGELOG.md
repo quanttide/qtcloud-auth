@@ -4,6 +4,7 @@ provider 模块的变更记录见 `src/provider/CHANGELOG.md`，此处仅记录�
 
 ## Unreleased
 
+- 新增 `src/lite/`：用户端自服务客户端（Flutter）骨架，定位用户管理自己的账号信息（自 qtaccount 迁入账号侧）
 - 新增 `src/studio/`：管理后台客户端（Flutter）骨架，定位为企业管理账号信息的后台系统
 - 功能：`GET /userinfo` 返回 `role` 字段；新增 CORS 中间件（浏览器 Web 客户端所需）
 - 功能：运维端点支持管理员账号鉴权（JWT + 角色 `admin` 权限），新增 `PUT /admin/users/{login}/role` 授予/撤销角色；共享 `ADMIN_TOKEN` 保留为兼容路径
