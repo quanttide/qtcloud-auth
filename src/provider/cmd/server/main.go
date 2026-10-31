@@ -85,8 +85,8 @@ func main() {
 	mux.HandleFunc("GET /userinfo", handler.AuthMiddleware(http.HandlerFunc(handler.UserInfo)).ServeHTTP)
 	mux.HandleFunc("POST /oauth/password/change", handler.AuthMiddleware(http.HandlerFunc(handler.ChangePassword)).ServeHTTP)
 	mux.HandleFunc("POST /userinfo", handler.AuthMiddleware(http.HandlerFunc(handler.UpdateUserInfo)).ServeHTTP)
-	// 运维端点（fail-closed：ADMIN_TOKEN 未配置或请求头不匹配一律 403）
-	api.NewAdminHandler(st, getEnv("ADMIN_TOKEN", "")).Register(mux)
+	// 运维端点（fail-closed：管理员 JWT 角色鉴权，兼容共享 ADMIN_TOKEN；两者都不通过一律 403）
+	api.NewAdminHandler(st, handler, getEnv("ADMIN_TOKEN", "")).Register(mux)
 
 	// ── 启动 ──
 	addr := getEnv("LISTEN_ADDR", ":8080")

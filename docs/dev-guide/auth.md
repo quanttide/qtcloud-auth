@@ -38,7 +38,10 @@
 
 ### 管理员（`cmd/server/main.go`）
 
-- `EnsureAdmin`：启动时若无 `admin` 则用 `ADMIN_PASSWORD` 创建（Argon2id 哈希）
+- `EnsureAdmin`：启动时若无 `admin` 则用 `ADMIN_PASSWORD` 创建（Argon2id 哈希），并确保 `admin` 角色（权限 `[admin]`）存在、挂到 admin 用户上（旧种子用户无角色时自动补挂）
+- 运维端点（`/admin/...`）鉴权双路径（fail-closed）：
+  1. **推荐**：管理员账号登录拿 JWT，角色含 `admin` 权限即放行——每个管理员独立账号，可单独撤销（`PUT /admin/users/{login}/role` 授予/撤销角色，不可改自己的角色）
+  2. 兼容：`X-Admin-Token` 共享口令（仅当 `ADMIN_TOKEN` 已配置时生效）
 - **已知**：admin 已存在时不会更新密码；轮换需删库重建（见 iac.md）
 
 ### 密钥（环境变量）

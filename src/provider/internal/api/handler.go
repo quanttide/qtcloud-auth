@@ -4,8 +4,8 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/json"
-	"errors"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -164,11 +164,25 @@ func (h *AuthHandler) parseToken(tokenString string) (jwt.MapClaims, error) {
 // ── 管理员种子 ──
 
 func (h *AuthHandler) EnsureAdmin(password string) error {
+	// 先确保 admin 角色存在（运维端点鉴权依赖其 admin 权限）
+	if err := h.ensureAdminRole(); err != nil {
+		return err
+	}
+
 	existing, err := h.findUserByUsername("admin")
 	if err != nil {
 		return err
 	}
 	if existing != nil {
+		// 旧种子用户无角色，补挂 admin 角色
+		if existing.RoleID == "" {
+			existing.RoleID = AdminRoleID
+			if data, mErr := json.Marshal(existing); mErr == nil {
+				if uErr := h.store.Update("auth/users", existing.ID, data); uErr != nil {
+					return uErr
+				}
+			}
+		}
 		slog.Info("admin user already exists, skipping seed")
 		return nil
 	}
@@ -180,6 +194,7 @@ func (h *AuthHandler) EnsureAdmin(password string) error {
 	user := model.User{
 		Username:     "admin",
 		PasswordHash: hash,
+		RoleID:       AdminRoleID,
 		CreatedAt:    time.Now().Format(time.RFC3339),
 	}
 	data, _ := json.Marshal(user)
@@ -194,4 +209,22 @@ func (h *AuthHandler) EnsureAdmin(password string) error {
 	}
 	slog.Info("admin user created")
 	return nil
+}
+
+// ensureAdminRole 确保 admin 角色存在（幂等）。
+func (h *AuthHandler) ensureAdminRole() error {
+	if _, err := h.store.Get("auth/roles", AdminRoleID); err == nil {
+		return nil // 已存在（保留人工调整过的权限）
+	}
+	role := model.Role{
+		ID:          AdminRoleID,
+		Name:        "admin",
+		Permissions: []string{AdminPermission},
+	}
+	data, err := json.Marshal(role)
+	if err != nil {
+		return err
+	}
+	_, err = h.store.Create("auth/roles", data)
+	return err
 }

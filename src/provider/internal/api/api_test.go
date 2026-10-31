@@ -27,10 +27,11 @@ import (
 
 // ── Mocks ──
 
-// mockStorer 内存模拟：users / verification_codes 两个集合。
+// mockStorer 内存模拟：users / roles / verification_codes 三个集合。
 // 注：错误字段仅作用于 users 集合，保证验证码写入/读取路径可控。
 type mockStorer struct {
 	users     []model.User
+	roles     []model.Role
 	codes     []model.VerificationCode
 	listErr   error
 	createErr error
@@ -40,6 +41,8 @@ type mockStorer struct {
 
 func (m *mockStorer) List(collection string) ([]byte, error) {
 	switch collection {
+	case "auth/roles":
+		return json.Marshal(m.roles)
 	case "auth/verification_codes":
 		return json.Marshal(m.codes)
 	default:
@@ -52,6 +55,16 @@ func (m *mockStorer) List(collection string) ([]byte, error) {
 
 func (m *mockStorer) Create(collection string, data []byte) (string, error) {
 	switch collection {
+	case "auth/roles":
+		var role model.Role
+		if err := json.Unmarshal(data, &role); err != nil {
+			return "", err
+		}
+		if role.ID == "" {
+			role.ID = fmt.Sprintf("r%d", len(m.roles)+1)
+		}
+		m.roles = append(m.roles, role)
+		return role.ID, nil
 	case "auth/verification_codes":
 		var c model.VerificationCode
 		if err := json.Unmarshal(data, &c); err != nil {
@@ -76,6 +89,13 @@ func (m *mockStorer) Create(collection string, data []byte) (string, error) {
 
 func (m *mockStorer) Get(collection string, id string) ([]byte, error) {
 	switch collection {
+	case "auth/roles":
+		for _, role := range m.roles {
+			if role.ID == id {
+				return json.Marshal(role)
+			}
+		}
+		return nil, fmt.Errorf("not found")
 	case "auth/verification_codes":
 		for _, c := range m.codes {
 			if c.ID == id {
@@ -97,6 +117,14 @@ func (m *mockStorer) Get(collection string, id string) ([]byte, error) {
 
 func (m *mockStorer) Delete(collection string, id string) error {
 	switch collection {
+	case "auth/roles":
+		for i := range m.roles {
+			if m.roles[i].ID == id {
+				m.roles = append(m.roles[:i], m.roles[i+1:]...)
+				return nil
+			}
+		}
+		return fmt.Errorf("not found")
 	case "auth/verification_codes":
 		for i := range m.codes {
 			if m.codes[i].ID == id {
@@ -117,6 +145,13 @@ func (m *mockStorer) Delete(collection string, id string) error {
 
 func (m *mockStorer) Update(collection string, id string, data []byte) error {
 	switch collection {
+	case "auth/roles":
+		for i := range m.roles {
+			if m.roles[i].ID == id {
+				return json.Unmarshal(data, &m.roles[i])
+			}
+		}
+		return fmt.Errorf("not found")
 	case "auth/verification_codes":
 		for i := range m.codes {
 			if m.codes[i].ID == id {
@@ -1556,7 +1591,7 @@ func TestFindUserByLogin(t *testing.T) {
 
 func TestAdminDeleteUser(t *testing.T) {
 	h := newTestHandler(t)
-	admin := NewAdminHandler(h.store, "admin-tok")
+	admin := NewAdminHandler(h.store, h, "admin-tok")
 
 	// 注册一个用户
 	body := `{"username":"delme","password":"secret1"}`
@@ -1602,6 +1637,139 @@ func TestAdminDeleteUser(t *testing.T) {
 	}
 }
 
+func TestAdminDeleteUser_JWTAdmin(t *testing.T) {
+	h := newTestHandler(t)
+	admin := NewAdminHandler(h.store, h, "") // 不配共享 token，只走 JWT 路径
+	_ = h.EnsureAdmin("admin")
+
+	// 注册一个待删用户
+	body := `{"username":"delme2","password":"secret1"}`
+	r := httptest.NewRequest("POST", "/oauth/register", bytes.NewReader([]byte(body)))
+	h.Register(httptest.NewRecorder(), r)
+
+	// 普通注册用户的 token → 403
+	body2 := `{"username":"plainuser","password":"secret1"}`
+	r2 := httptest.NewRequest("POST", "/oauth/register", bytes.NewReader([]byte(body2)))
+	w2 := httptest.NewRecorder()
+	h.Register(w2, r2)
+	var regResp struct {
+		AccessToken string `json:"access_token"`
+	}
+	_ = json.Unmarshal(w2.Body.Bytes(), &regResp)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("DELETE", "/admin/users/delme2", nil)
+	req.SetPathValue("login", "delme2")
+	req.Header.Set("Authorization", "Bearer "+regResp.AccessToken)
+	admin.handleDeleteUser(w, req)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("plain user: %d, want 403", w.Code)
+	}
+
+	// 管理员登录拿 JWT → 204
+	token := loginGetToken(t, h)
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest("DELETE", "/admin/users/delme2", nil)
+	req.SetPathValue("login", "delme2")
+	req.Header.Set("Authorization", "Bearer "+token)
+	admin.handleDeleteUser(w, req)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("admin jwt delete: %d, want 204 (%s)", w.Code, w.Body.String())
+	}
+}
+
+// ── Admin：设置角色 ──
+
+func TestAdminSetRole(t *testing.T) {
+	h := newTestHandler(t)
+	_ = h.EnsureAdmin("admin")
+	admin := NewAdminHandler(h.store, h, "")
+	token := loginGetToken(t, h)
+
+	// 注册普通用户
+	body := `{"username":"mom","password":"secret1"}`
+	r := httptest.NewRequest("POST", "/oauth/register", bytes.NewReader([]byte(body)))
+	h.Register(httptest.NewRecorder(), r)
+
+	// 授予 admin 角色 → 204，用户 RoleID 更新
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("PUT", "/admin/users/mom/role", strings.NewReader(`{"role":"admin"}`))
+	req.SetPathValue("login", "mom")
+	req.Header.Set("Authorization", "Bearer "+token)
+	admin.handleSetRole(w, req)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("set role: %d, want 204 (%s)", w.Code, w.Body.String())
+	}
+	u, _ := h.findUserByLogin("mom")
+	if u == nil || u.RoleID != "admin" {
+		t.Fatalf("mom RoleID = %q, want admin", u.RoleID)
+	}
+
+	// 不存在的角色 → 400
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest("PUT", "/admin/users/mom/role", strings.NewReader(`{"role":"ghost"}`))
+	req.SetPathValue("login", "mom")
+	req.Header.Set("Authorization", "Bearer "+token)
+	admin.handleSetRole(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("ghost role: %d, want 400", w.Code)
+	}
+
+	// 不存在的用户 → 404
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest("PUT", "/admin/users/ghost/role", strings.NewReader(`{"role":"admin"}`))
+	req.SetPathValue("login", "ghost")
+	req.Header.Set("Authorization", "Bearer "+token)
+	admin.handleSetRole(w, req)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("ghost user: %d, want 404", w.Code)
+	}
+
+	// 改自己的角色 → 403（防自锁）
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest("PUT", "/admin/users/admin/role", strings.NewReader(`{"role":""}`))
+	req.SetPathValue("login", "admin")
+	req.Header.Set("Authorization", "Bearer "+token)
+	admin.handleSetRole(w, req)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("modify own role: %d, want 403", w.Code)
+	}
+
+	// 撤销 mom 的角色 → RoleID 清空，再用其 token 调管理端点 → 403
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest("PUT", "/admin/users/mom/role", strings.NewReader(`{"role":""}`))
+	req.SetPathValue("login", "mom")
+	req.Header.Set("Authorization", "Bearer "+token)
+	admin.handleSetRole(w, req)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("revoke role: %d, want 204", w.Code)
+	}
+	u, _ = h.findUserByLogin("mom")
+	if u.RoleID != "" {
+		t.Fatalf("mom RoleID = %q, want empty", u.RoleID)
+	}
+}
+
+func TestEnsureAdmin_SeedsRole(t *testing.T) {
+	h := newTestHandler(t)
+	if err := h.EnsureAdmin("pw"); err != nil {
+		t.Fatalf("EnsureAdmin: %v", err)
+	}
+	data, err := h.store.Get("auth/roles", AdminRoleID)
+	if err != nil {
+		t.Fatalf("admin role not seeded: %v", err)
+	}
+	var role model.Role
+	_ = json.Unmarshal(data, &role)
+	if len(role.Permissions) != 1 || role.Permissions[0] != AdminPermission {
+		t.Fatalf("admin role permissions = %v, want [%s]", role.Permissions, AdminPermission)
+	}
+	u, _ := h.findUserByUsername("admin")
+	if u.RoleID != AdminRoleID {
+		t.Fatalf("admin user RoleID = %q, want %s", u.RoleID, AdminRoleID)
+	}
+}
+
 // ── 修改密码 ──
 
 func TestChangePassword(t *testing.T) {
@@ -1618,7 +1786,9 @@ func TestChangePassword(t *testing.T) {
 	r2.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	w2 := httptest.NewRecorder()
 	h.Token(w2, r2)
-	var resp struct{ AccessToken string `json:"access_token"` }
+	var resp struct {
+		AccessToken string `json:"access_token"`
+	}
 	json.NewDecoder(w2.Body).Decode(&resp)
 	token = resp.AccessToken
 	if token == "" {
@@ -1672,7 +1842,9 @@ func TestUpdateUserInfo(t *testing.T) {
 	r2.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	w2 := httptest.NewRecorder()
 	h.Token(w2, r2)
-	var resp struct{ AccessToken string `json:"access_token"` }
+	var resp struct {
+		AccessToken string `json:"access_token"`
+	}
 	json.NewDecoder(w2.Body).Decode(&resp)
 	token = resp.AccessToken
 	if token == "" {
